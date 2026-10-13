@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">OpenDriver</string>
+    <string name="accessibility_service_description">Lê ofertas de corridas da Uber e 99 em tempo real para calcular rentabilidade e lucro líquido.</string>
+</resources>

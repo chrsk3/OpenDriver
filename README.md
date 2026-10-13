@@ -69,13 +69,26 @@ Você poderá digitar na hora o valor, a distância até o passageiro, a distân
   - [x] Suíte de testes unitários automatizados.
   - [x] CLI interativa para Termux.
   - [x] Integração contínua (GitHub Actions CI/CD).
-- [ ] **Fase 2: Módulo Nativo Android**
-  - [ ] Leitor de ofertas via `AccessibilityService` ou `NotificationListenerService` para Uber e 99.
-  - [ ] Parser de texto em tempo real (extração de valor, km e minutos da tela).
-- [ ] **Fase 3: Interface e Janela Flutuante (Overlay)**
-  - [ ] Balão flutuante na tela (`SYSTEM_ALERT_WINDOW`) com alerta visual imediato antes de expirar a chamada.
-  - [ ] Painel de configurações visuais em Jetpack Compose.
-  - [ ] Histórico local e relatórios diários de faturamento (100% offline).
+- [x] **Fase 2: Módulo Nativo Android & Leitor de Tela**
+  - [x] Leitor em tempo real via `AccessibilityService` (`OpenDriverAccessibilityService`) para Uber e 99.
+  - [x] Parser inteligente de texto (`RideTextParser`).
+  - [x] Bolha flutuante interativa sobre outros apps (`FloatingOverlayService`).
+  - [x] Interface gráfica em Jetpack Compose (`MainActivity`).
+  - [x] Compilação automática do APK via GitHub Actions CI.
+- [ ] **Fase 3: Recursos Avançados & Histórico**
+  - [ ] Histórico local diário de corridas e faturamento (SQLite / Room).
+  - [ ] Gráficos de metas atingidas por dia e semana.
+  - [ ] Suporte a mais plataformas (inDrive, Lalamove, Borzo).
+
+---
+
+## 📦 Como Baixar o APK do OpenDriver
+
+Como o projeto é construído na nuvem pelo GitHub Actions:
+1. Acesse a aba **[Actions](https://github.com/chrsk3/OpenDriver/actions)** do repositório no seu navegador.
+2. Clique no último build concluído da branch `main`.
+3. Na seção **Artifacts**, clique em **`OpenDriver-debug-apk`** para fazer o download do arquivo `.apk` diretamente para o seu celular.
+4. Abra o arquivo no Android e toque em Instalar!
 
 ---
 

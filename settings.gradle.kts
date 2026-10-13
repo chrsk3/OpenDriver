@@ -15,3 +15,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "OpenDriver"
 include(":core")
+include(":app")
