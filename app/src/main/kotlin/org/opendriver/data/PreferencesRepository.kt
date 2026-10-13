@@ -22,9 +22,10 @@ class PreferencesRepository(context: Context) {
         return VehicleProfile(
             name = prefs.getString("vehicle_name", "Meu Veículo") ?: "Meu Veículo",
             fuelType = fuelType,
-            fuelPrice = prefs.getFloat("fuel_price", 5.85f).toDouble(),
+            fuelPrice = prefs.getFloat("fuel_price", if (fuelType == FuelType.ELECTRIC) 0.90f else 5.85f).toDouble(),
             fuelConsumption = prefs.getFloat("fuel_consumption", 11.5f).toDouble(),
-            maintenanceCostPerKm = prefs.getFloat("maint_per_km", 0.20f).toDouble(),
+            kwhPer100Km = prefs.getFloat("kwh_per_100km", 13.0f).toDouble(),
+            maintenanceCostPerKm = prefs.getFloat("maint_per_km", if (fuelType == FuelType.ELECTRIC) 0.08f else 0.20f).toDouble(),
             depreciationCostPerKm = prefs.getFloat("deprec_per_km", 0.15f).toDouble(),
             dailyFixedCost = prefs.getFloat("daily_fixed", 25.0f).toDouble(),
             estimatedDailyKm = prefs.getFloat("daily_km", 120.0f).toDouble()
@@ -37,6 +38,7 @@ class PreferencesRepository(context: Context) {
             .putString("fuel_type", profile.fuelType.name)
             .putFloat("fuel_price", profile.fuelPrice.toFloat())
             .putFloat("fuel_consumption", profile.fuelConsumption.toFloat())
+            .putFloat("kwh_per_100km", profile.kwhPer100Km.toFloat())
             .putFloat("maint_per_km", profile.maintenanceCostPerKm.toFloat())
             .putFloat("deprec_per_km", profile.depreciationCostPerKm.toFloat())
             .putFloat("daily_fixed", profile.dailyFixedCost.toFloat())

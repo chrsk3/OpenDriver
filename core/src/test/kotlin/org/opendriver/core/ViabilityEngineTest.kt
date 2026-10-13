@@ -10,6 +10,7 @@ fun main() {
     testCorridaPrejuizo()
     testAlertaBuscaLonga()
     testSegurancaDivisaoPorZero()
+    testCalculoCarroEletrico()
 
     println("✅ Todos os testes passaram com sucesso!")
 }
@@ -112,4 +113,36 @@ fun testSegurancaDivisaoPorZero() {
     val resultado = ViabilityEngine.evaluate(corrida, perfil)
     assertEquals(0.0, resultado.grossPerKm, message = "Divisão segura de km")
     assertEquals(0.0, resultado.grossHourlyRate, message = "Divisão segura de horas")
+}
+
+fun testCalculoCarroEletrico() {
+    val perfilEletrico = VehicleProfile(
+        name = "BYD Dolphin Mini",
+        fuelType = FuelType.ELECTRIC,
+        fuelPrice = 0.90, // R$ 0.90 / kWh
+        kwhPer100Km = 13.0, // 13 kWh / 100 km => 0.117 R$/km
+        maintenanceCostPerKm = 0.08,
+        depreciationCostPerKm = 0.10,
+        dailyFixedCost = 0.0
+    )
+
+    // Custo de energia: (13 / 100) * 0.90 = 0.117
+    // Custo total/km: 0.117 + 0.08 + 0.10 = 0.297 R$/km
+    assertEquals(0.117, perfilEletrico.fuelCostPerKm, delta = 0.001, message = "Custo energia/km")
+    assertEquals(0.297, perfilEletrico.totalCostPerKm, delta = 0.001, message = "Custo total/km elétrico")
+
+    val corrida = RideOffer(
+        grossFare = 25.00,
+        pickupDistanceKm = 1.0,
+        tripDistanceKm = 9.0, // 10 km
+        pickupDurationMinutes = 3.0,
+        tripDurationMinutes = 17.0 // 20 min
+    )
+
+    val resultado = ViabilityEngine.evaluate(corrida, perfilEletrico)
+    // Custo estimado: 10 * 0.297 = 2.97
+    assertEquals(2.97, resultado.totalEstimatedCost, delta = 0.01, message = "Custo total corrida")
+    // Lucro líquido: 25.00 - 2.97 = 22.03
+    assertEquals(22.03, resultado.netProfit, delta = 0.01, message = "Lucro líquido elétrico")
+    assertTrue(resultado.status == ViabilityStatus.EXCELLENT, "Carro elétrico deve ter margem excelente")
 }
