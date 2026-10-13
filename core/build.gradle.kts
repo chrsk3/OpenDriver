@@ -10,9 +10,6 @@ application {
     mainClass.set("org.opendriver.core.cli.OpenDriverCliKt")
 }
 
-repositories {
-    mavenCentral()
-}
 
 dependencies {
     testImplementation(kotlin("test"))
