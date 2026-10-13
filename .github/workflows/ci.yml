@@ -1,0 +1,33 @@
+name: OpenDriver CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 21
+      uses: actions/setup-java@v4
+      with:
+        java-version: '21'
+        distribution: 'temurin'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+
+    - name: Run Core Tests and Build
+      run: ./run.sh --test && ./run.sh --build
+
+    - name: Upload Core Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: opendriver-core-cli
+        path: build/opendriver-cli.jar

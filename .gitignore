@@ -1,0 +1,23 @@
+*.class
+*.jar
+*.war
+*.ear
+*.log
+
+# Build folders
+build/
+.gradle/
+.idea/
+*.iml
+local.properties
+.DS_Store
+
+# Android output
+*.apk
+*.aab
+/app/build/
+/core/build/
+
+# Termux / OS
+out/
+bin/
