@@ -15,6 +15,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.util.Log
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -26,6 +27,7 @@ import org.opendriver.core.model.BubbleSize
 import org.opendriver.core.model.ViabilityResult
 import org.opendriver.core.model.ViabilityStatus
 import org.opendriver.data.PreferencesRepository
+import java.io.File
 import java.util.Locale
 import kotlin.math.abs
 
@@ -58,10 +60,12 @@ class FloatingOverlayService : Service() {
         super.onCreate()
         startAsForeground()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        logLine("service onCreate")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
+        logLine("onStartCommand action=$action hasResult=${currentResult != null}")
 
         if (action == ACTION_HIDE) {
             removeEverything()
@@ -143,8 +147,10 @@ class FloatingOverlayService : Service() {
 
         try {
             wm.addView(trigger, params)
-        } catch (_: Exception) {
+            logLine("trigger addView ok")
+        } catch (e: Exception) {
             triggerView = null
+            logLine("trigger addView FAIL: ${e.javaClass.simpleName}: ${e.message}")
         }
     }
 
@@ -236,8 +242,10 @@ class FloatingOverlayService : Service() {
 
         try {
             wm.addView(view, params)
-        } catch (_: Exception) {
+            logLine("card addView ok")
+        } catch (e: Exception) {
             cardView = null
+            logLine("card addView FAIL: ${e.javaClass.simpleName}: ${e.message}")
             return
         }
 
@@ -440,6 +448,17 @@ class FloatingOverlayService : Service() {
 
     // ── Remoção / ciclo de vida ──────────────────────────────────────────────
 
+    private fun logLine(msg: String) {
+        Log.i("OpenDriver", "[overlay] $msg")
+        try {
+            val dir = getExternalMediaDirs()?.firstOrNull() ?: return
+            val file = File(dir, "overlay_log.txt")
+            val merged = (if (file.exists()) file.readText() else "") +
+                "${System.currentTimeMillis()} $msg\n"
+            file.writeText(if (merged.length > 20000) merged.takeLast(20000) else merged)
+        } catch (_: Exception) {}
+    }
+
     private fun removeCard() {
         autoDismissRunnable?.let { handler.removeCallbacks(it) }
         autoDismissRunnable = null
@@ -480,6 +499,9 @@ class FloatingOverlayService : Service() {
 
         fun showResult(context: Context, result: ViabilityResult) {
             currentResult = result
+            logToFile(context, "showResult: R$ %.2f • %.1f km • %s".format(
+                Locale.US, result.offer.grossFare, result.offer.totalDistanceKm, result.status.label
+            ))
             startService(context)
         }
 
@@ -492,11 +514,31 @@ class FloatingOverlayService : Service() {
             val intent = Intent(context, FloatingOverlayService::class.java).apply {
                 action = ACTION_SHOW
             }
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+            } catch (e: Exception) {
+                // Android 12+ pode bloquear start de FGS em background; tenta o start normal.
+                logToFile(context, "startForegroundService FAIL: ${e.javaClass.simpleName}: ${e.message}")
+                try {
+                    context.startService(intent)
+                } catch (e2: Exception) {
+                    logToFile(context, "startService FAIL: ${e2.javaClass.simpleName}: ${e2.message}")
+                }
             }
+        }
+
+        private fun logToFile(context: Context, msg: String) {
+            try {
+                val dir = context.getExternalMediaDirs()?.firstOrNull() ?: return
+                val file = File(dir, "overlay_log.txt")
+                val merged = (if (file.exists()) file.readText() else "") +
+                    "${System.currentTimeMillis()} $msg\n"
+                file.writeText(if (merged.length > 20000) merged.takeLast(20000) else merged)
+            } catch (_: Exception) {}
         }
 
         fun hide(context: Context) {
