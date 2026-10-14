@@ -1,18 +1,18 @@
 package org.opendriver.core.model
 
 /**
- * Metas e preferências configuradas pelo motorista para classificar a corrida.
+ * Metas e preferências do motorista que classificam a corrida no semáforo.
  *
- * @property minGrossPerKm Mínimo aceitável de ganho bruto por km total (ex: R$ 2.00)
- * @property minNetPerKm Mínimo aceitável de lucro líquido por km total (ex: R$ 1.20)
- * @property minNetHourlyRate Mínimo aceitável de lucro líquido por hora trabalhada (ex: R$ 35.00)
- * @property maxPickupDistanceKm Distância máxima aceitável de deslocamento até o passageiro (ex: 3.5 km)
- * @property minPassengerRating Nota mínima aceitável do passageiro (ex: 4.75)
+ * Cada métrica tem dois limites: um "bom" (atinge a meta → verde) e um "ruim"
+ * (abaixo → vermelho). Entre eles, fica amarelo.
  */
 data class DriverPreferences(
-    val minGrossPerKm: Double = 2.00,
     val minNetPerKm: Double = 1.20,
+    val ruimNetPerKm: Double = 0.50,
     val minNetHourlyRate: Double = 35.00,
-    val maxPickupDistanceKm: Double = 4.0,
-    val minPassengerRating: Double = 4.75
+    val ruimNetHourlyRate: Double = 20.00,
+    val minGrossPerKm: Double = 2.00,
+    val minPassengerRating: Double = 4.90,
+    val ruimPassengerRating: Double = 4.70,
+    val maxPickupDistanceKm: Double = 4.0
 )

@@ -171,23 +171,59 @@ class PreferencesRepository(context: Context) {
 
     fun getDriverPreferences(): DriverPreferences {
         return DriverPreferences(
-            minGrossPerKm = prefs.getFloat("min_gross_km", 2.00f).toDouble(),
             minNetPerKm = prefs.getFloat("min_net_km", 1.20f).toDouble(),
+            ruimNetPerKm = prefs.getFloat("ruim_net_km", 0.50f).toDouble(),
             minNetHourlyRate = prefs.getFloat("min_net_hour", 35.00f).toDouble(),
-            maxPickupDistanceKm = prefs.getFloat("max_pickup_km", 3.5f).toDouble(),
-            minPassengerRating = prefs.getFloat("min_rating", 4.75f).toDouble()
+            ruimNetHourlyRate = prefs.getFloat("ruim_net_hour", 20.00f).toDouble(),
+            minGrossPerKm = prefs.getFloat("min_gross_km", 2.00f).toDouble(),
+            minPassengerRating = prefs.getFloat("min_rating", 4.90f).toDouble(),
+            ruimPassengerRating = prefs.getFloat("ruim_pass_rating", 4.70f).toDouble(),
+            maxPickupDistanceKm = prefs.getFloat("max_pickup_km", 4.0f).toDouble()
         )
     }
 
-    fun saveDriverPreferences(preferences: DriverPreferences) {
+    fun saveDriverPreferences(p: DriverPreferences) {
         prefs.edit()
-            .putFloat("min_gross_km", preferences.minGrossPerKm.toFloat())
-            .putFloat("min_net_km", preferences.minNetPerKm.toFloat())
-            .putFloat("min_net_hour", preferences.minNetHourlyRate.toFloat())
-            .putFloat("max_pickup_km", preferences.maxPickupDistanceKm.toFloat())
-            .putFloat("min_rating", preferences.minPassengerRating.toFloat())
+            .putFloat("min_net_km", p.minNetPerKm.toFloat())
+            .putFloat("ruim_net_km", p.ruimNetPerKm.toFloat())
+            .putFloat("min_net_hour", p.minNetHourlyRate.toFloat())
+            .putFloat("ruim_net_hour", p.ruimNetHourlyRate.toFloat())
+            .putFloat("min_gross_km", p.minGrossPerKm.toFloat())
+            .putFloat("min_rating", p.minPassengerRating.toFloat())
+            .putFloat("ruim_pass_rating", p.ruimPassengerRating.toFloat())
+            .putFloat("max_pickup_km", p.maxPickupDistanceKm.toFloat())
             .apply()
     }
+
+    // === Aparência do card de resultado ===
+
+    /** Posição horizontal do card: "Esquerda", "Centro" ou "Direita". */
+    fun getCardPosition(): String = prefs.getString("card_position", "Esquerda") ?: "Esquerda"
+    fun setCardPosition(v: String) = prefs.edit().putString("card_position", v).apply()
+
+    /** Tema do card: "Escuro" ou "Claro". */
+    fun getCardTheme(): String = prefs.getString("card_theme", "Claro") ?: "Claro"
+    fun setCardTheme(v: String) = prefs.edit().putString("card_theme", v).apply()
+
+    /** Paleta de destaque do card: "Verde", "Azul" ou "Roxo". */
+    fun getCardPalette(): String = prefs.getString("card_palette", "Verde") ?: "Verde"
+    fun setCardPalette(v: String) = prefs.edit().putString("card_palette", v).apply()
+
+    /** Escala de fonte do card (10–24; 15 = padrão). */
+    fun getCardFontSize(): Int = prefs.getInt("card_font_size", 15)
+    fun setCardFontSize(v: Int) = prefs.edit().putInt("card_font_size", v.coerceIn(10, 24)).apply()
+
+    /** Métricas exibidas no card, na ordem. */
+    fun getCardMetrics(): List<String> {
+        val raw = prefs.getString("card_metrics", "Ganho/km,Ganho/h,Nota") ?: "Ganho/km,Ganho/h,Nota"
+        return raw.split(",").filter { it.isNotBlank() }
+    }
+    fun setCardMetrics(list: List<String>) =
+        prefs.edit().putString("card_metrics", list.joinToString(",")).apply()
+
+    /** Publica notificação de texto com os detalhes da corrida. */
+    fun getTextNotificationEnabled(): Boolean = prefs.getBoolean("text_notification", true)
+    fun setTextNotificationEnabled(v: Boolean) = prefs.edit().putBoolean("text_notification", v).apply()
 
     // === Ganho acumulado (simulado para tela de detalhes) ===
     fun getGanhoSemanal(): Double = prefs.getFloat("ganho_semanal", 3322f).toDouble()

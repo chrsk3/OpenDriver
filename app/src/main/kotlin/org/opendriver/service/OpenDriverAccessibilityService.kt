@@ -201,11 +201,17 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun isTargetApp(packageName: String): Boolean =
-        packageName.contains("uber", ignoreCase = true) ||
-                packageName.contains("taxis99", ignoreCase = true) ||
-                packageName.contains("didiglobal", ignoreCase = true) ||
-                packageName.contains("indrive", ignoreCase = true)
+    /** Só processa apps que o usuário deixou selecionados (Uber, 99, InDrive). */
+    private fun isTargetApp(packageName: String): Boolean {
+        val selected = preferencesRepo.getSelectedApps()
+        return when {
+            packageName.contains("uber", ignoreCase = true) -> "Uber" in selected
+            packageName.contains("taxis99", ignoreCase = true) ||
+                packageName.contains("didiglobal", ignoreCase = true) -> "99" in selected
+            packageName.contains("indrive", ignoreCase = true) -> "InDrive" in selected
+            else -> false
+        }
+    }
 
     private fun hasAcceptSignal(texts: Collection<String>): Boolean =
         texts.any { ACCEPT_REGEX.containsMatchIn(it) }

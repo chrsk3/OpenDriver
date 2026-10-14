@@ -230,6 +230,13 @@ class FloatingOverlayService : Service() {
         val wm = windowManager ?: return
         removeCard()
 
+        val prefs = PreferencesRepository(this)
+        val hGravity = when (prefs.getCardPosition()) {
+            "Centro" -> Gravity.CENTER_HORIZONTAL
+            "Direita" -> Gravity.END
+            else -> Gravity.START
+        }
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -238,14 +245,17 @@ class FloatingOverlayService : Service() {
                     WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
+            gravity = Gravity.TOP or hGravity
             x = dp(16f)
             y = dp(120f)
         }
 
-        val bubbleSize = PreferencesRepository(this).getBubbleSize()
-        val view = createCardView(res, params, wm, bubbleSize)
+        val view = createCardView(res, params, wm, prefs)
         cardView = view
+
+        if (prefs.getTextNotificationEnabled()) {
+            postTextNotification(res)
+        }
 
         try {
             wm.addView(view, params)
@@ -267,14 +277,24 @@ class FloatingOverlayService : Service() {
         res: ViabilityResult,
         params: WindowManager.LayoutParams,
         wm: WindowManager,
-        bubbleSize: BubbleSize
+        prefs: PreferencesRepository
     ): View {
-        // Um único multiplicador deriva todas as dimensões: borda, corner radius,
-        // padding, tipografia e ícones escalam juntos em qualquer tamanho.
-        val s = bubbleSize.scale
-        val accent = statusColor(res.status)
-        val textColor = Color.parseColor("#111111")
+        // Um único multiplicador deriva as dimensões do frame; a fonte tem escala própria.
+        val s = prefs.getBubbleSize().scale
+        val fs = prefs.getCardFontSize() / 15f
+
+        val dark = prefs.getCardTheme() == "Escuro"
+        val textColor = if (dark) Color.WHITE else Color.parseColor("#111111")
         val labelColor = Color.parseColor("#9E9E9E")
+        val bgColor = if (dark) Color.parseColor("#1B1B1B") else Color.WHITE
+
+        // Semáforo: verde (bate metas) / amarelo (regular) / vermelho (prejuízo).
+        // A paleta troca o tom do "verde" quando a corrida é boa/excelente.
+        val accent = when (res.status) {
+            ViabilityStatus.REGULAR -> Color.parseColor("#F9A825")
+            ViabilityStatus.UNPROFITABLE -> Color.parseColor("#E53935")
+            else -> paletteColorInt(prefs.getCardPalette())
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -282,27 +302,22 @@ class FloatingOverlayService : Service() {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.RECTANGLE
                 cornerRadius = dp(16f * s).toFloat()
-                setColor(Color.WHITE)
+                setColor(bgColor)
                 setStroke(dp(3f * s).coerceAtLeast(2), accent)
             }
         }
 
-        // ── Linha de métricas: $/Km · $/Hora · Nota ─────────────────────────
+        // ── Métricas selecionadas (na ordem configurada) ─────────────────────
+        val metricIds = prefs.getCardMetrics().ifEmpty { listOf("Ganho/km", "Ganho/h", "Nota") }
         val metrics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         metrics.layoutParams = LinearLayout.LayoutParams(
             (300 * density * s).toInt(),
             LinearLayout.LayoutParams.WRAP_CONTENT
         )
-
-        metrics.addView(metricColumn("$/Km", format2(res.grossPerKm), accent, textColor, labelColor, s))
-        metrics.addView(metricColumn("$/Hora", format2(res.grossHourlyRate), accent, textColor, labelColor, s))
-        metrics.addView(
-            metricColumn(
-                "Nota",
-                res.offer.passengerRating?.let { format2(it) } ?: "--",
-                accent, textColor, labelColor, s
-            )
-        )
+        metricIds.forEach { id ->
+            val (label, value) = metricValue(id, res)
+            metrics.addView(metricColumn(label, value, accent, textColor, labelColor, s, fs))
+        }
         root.addView(metrics)
 
         // ── Rodapé: badge da plataforma + tempo · distância ─────────────────
@@ -315,7 +330,7 @@ class FloatingOverlayService : Service() {
             LinearLayout.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = dp(10f * s) }
 
-        footer.addView(platformBadge(res.offer.platform.displayName, s))
+        footer.addView(platformBadge(res.offer.platform.displayName, s, fs))
 
         val tokens = mutableListOf(formatDuration(res.offer.totalDurationMinutes), formatKm(res.offer.totalDistanceKm))
         if (res.offer.pickupDistanceKm > 0.0) {
@@ -324,7 +339,7 @@ class FloatingOverlayService : Service() {
         val footerText = TextView(this).apply {
             text = tokens.joinToString(" · ")
             setTextColor(textColor)
-            textSize = 15f * s
+            textSize = 15f * s * fs
             typeface = Typeface.DEFAULT_BOLD
         }
         footer.addView(footerText, LinearLayout.LayoutParams(
@@ -345,7 +360,8 @@ class FloatingOverlayService : Service() {
         accent: Int,
         textColor: Int,
         labelColor: Int,
-        s: Float
+        s: Float,
+        fs: Float
     ): View {
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -355,7 +371,7 @@ class FloatingOverlayService : Service() {
         val labelView = TextView(this).apply {
             text = label
             setTextColor(labelColor)
-            textSize = 12f * s
+            textSize = 12f * s * fs
         }
 
         val row = LinearLayout(this).apply {
@@ -375,7 +391,7 @@ class FloatingOverlayService : Service() {
         val valueView = TextView(this).apply {
             text = value
             setTextColor(textColor)
-            textSize = 22f * s
+            textSize = 22f * s * fs
             typeface = Typeface.DEFAULT_BOLD
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -390,11 +406,11 @@ class FloatingOverlayService : Service() {
         return column
     }
 
-    private fun platformBadge(name: String, s: Float): View {
+    private fun platformBadge(name: String, s: Float, fs: Float): View {
         return TextView(this).apply {
             text = name.uppercase(localeBr)
             setTextColor(Color.WHITE)
-            textSize = 11f * s
+            textSize = 11f * s * fs
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             setPadding(dp(6f * s), dp(3f * s), dp(6f * s), dp(3f * s))
@@ -455,6 +471,38 @@ class FloatingOverlayService : Service() {
     }
 
     // ── Remoção / ciclo de vida ──────────────────────────────────────────────
+
+    private fun metricValue(id: String, res: ViabilityResult): Pair<String, String> = when (id) {
+        "Ganho/km" -> "$/Km" to format2(res.grossPerKm)
+        "Ganho/h" -> "$/Hora" to format2(res.grossHourlyRate)
+        "Nota" -> "Nota" to (res.offer.passengerRating?.let { format2(it) } ?: "--")
+        "Lucro" -> "Lucro" to format2(res.netProfit)
+        else -> id to "--"
+    }
+
+    private fun paletteColorInt(name: String): Int = when (name) {
+        "Azul" -> Color.parseColor("#40C4FF")
+        "Roxo" -> Color.parseColor("#B388FF")
+        else -> Color.parseColor("#00C853")
+    }
+
+    private fun postTextNotification(res: ViabilityResult) {
+        try {
+            val mgr = getSystemService(NotificationManager::class.java) ?: return
+            val text = "%s • Lucro R$ %.2f • R$ %.2f/km • R$ %.1f/h".format(
+                Locale.US, res.offer.platform.displayName, res.netProfit, res.netPerKm, res.netHourlyRate
+            )
+            val notification = NotificationCompat.Builder(this, "opendriver_overlay_channel")
+                .setContentTitle("OpenDriver • ${res.status.label}")
+                .setContentText(text)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+                .setSmallIcon(android.R.drawable.ic_menu_compass)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .setAutoCancel(true)
+                .build()
+            mgr.notify(2002, notification)
+        } catch (_: Exception) {}
+    }
 
     private fun logLine(msg: String) {
         Log.i("OpenDriver", "[overlay] $msg")

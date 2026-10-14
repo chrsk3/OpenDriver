@@ -65,12 +65,20 @@ object ViabilityEngine {
             alerts.add("Ganho bruto (R$ ${formatTwoDecimals(grossPerKm)}/km) abaixo da sua meta de R$ ${formatTwoDecimals(preferences.minGrossPerKm)}/km")
         }
 
-        // Determinação do status
+        // Determinação do status a partir das metas (faixa ruim..bom) do motorista.
+        val rating = offer.passengerRating
+        val meetsGood = netPerKm >= preferences.minNetPerKm &&
+            netHourly >= preferences.minNetHourlyRate &&
+            (rating == null || rating >= preferences.minPassengerRating)
+
+        val isBad = netProfit <= 0.0 ||
+            netPerKm <= preferences.ruimNetPerKm ||
+            netHourly <= preferences.ruimNetHourlyRate ||
+            (rating != null && rating < preferences.ruimPassengerRating)
+
         val status = when {
-            netProfit <= 0 || netPerKm <= 0.20 -> ViabilityStatus.UNPROFITABLE
-            // A cor segue as metas configuradas de lucro/km e lucro/hora (busca longa
-            // continua apenas como alerta, sem reprovar a corrida sozinha).
-            netPerKm >= preferences.minNetPerKm && netHourly >= preferences.minNetHourlyRate -> {
+            isBad -> ViabilityStatus.UNPROFITABLE
+            meetsGood -> {
                 if (grossPerKm >= preferences.minGrossPerKm * 1.30 || netHourly >= preferences.minNetHourlyRate * 1.30) {
                     ViabilityStatus.EXCELLENT
                 } else {
