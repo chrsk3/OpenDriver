@@ -154,6 +154,11 @@ fun MainScreen(
         }
     }
 
+    // Mantém o botão flutuante em sincronia com o estado do Copiloto.
+    LaunchedEffect(copilotEnabled) {
+        if (copilotEnabled) FloatingOverlayService.enable(context) else FloatingOverlayService.hide(context)
+    }
+
     if (showCopilotSettings) {
         CopilotSettingsDialog(
             repo = repo,
@@ -182,8 +187,8 @@ fun MainScreen(
             onToggle = {
                 copilotEnabled = it
                 repo.setCopilotEnabled(it)
-                // Copiloto é o switch mestre: desligar encerra a leitura e remove o botão flutuante.
-                if (!it) FloatingOverlayService.hide(context)
+                // Copiloto é o switch mestre: liga mostra o botão flutuante; desliga remove tudo.
+                if (it) FloatingOverlayService.enable(context) else FloatingOverlayService.hide(context)
             },
             onSettings = { showCopilotSettings = true }
         )

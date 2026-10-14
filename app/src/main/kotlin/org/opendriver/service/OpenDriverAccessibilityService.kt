@@ -8,6 +8,9 @@ import org.opendriver.core.calculator.ViabilityEngine
 import org.opendriver.data.PreferencesRepository
 import org.opendriver.parser.RideTextParser
 import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 /**
  * Serviço de acessibilidade que monitora a tela para capturar dados
@@ -20,7 +23,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     private var lastOfferTimestamp: Long = 0
     private var eventsSeen: Int = 0
     private var lastCounterPersist: Long = 0
-    private var lastRawAt: Long = 0
+    private var lastLogAt: Long = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -66,10 +69,10 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
         if (texts.isEmpty()) return
 
-        persistRawEvent(packageName, event, texts)
+        appendCaptureLog(packageName, event.eventType, texts)
 
-        // Ignora ruído (Recentes, barra de notificações, etc.): só registra/analisa
-        // capturas que pareçam conter uma oferta (valor em R$, km ou min).
+        // Ignora ruído (home offline "R$ 0,00", Recentes, barra de notificações):
+        // só registra/analisa capturas que tenham valor real (> R$1) E distância/tempo.
         if (!looksLikeOffer(texts)) return
 
         val offer = RideTextParser.parse(packageName, texts.toList())
@@ -118,11 +121,23 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 packageName.contains("didiglobal", ignoreCase = true) ||
                 packageName.contains("indrive", ignoreCase = true)
 
-    /** Heurística: a captura tem cara de oferta se contém valor (R$), distância (km) ou tempo (min). */
-    private fun looksLikeOffer(texts: Collection<String>): Boolean = texts.any { t ->
-        t.contains("R$", ignoreCase = true) ||
-            Regex("""\d[.,]?\d*\s*km""", RegexOption.IGNORE_CASE).containsMatchIn(t) ||
-            Regex("""\d+\s*min""", RegexOption.IGNORE_CASE).containsMatchIn(t)
+    /**
+     * Heurística para não confundir a home (que tem "R$ 0,00") com uma oferta:
+     * exige um valor monetário real (> R$1) E sinal de distância (km) ou tempo (min).
+     */
+    private fun looksLikeOffer(texts: Collection<String>): Boolean {
+        var maxFare = 0.0
+        var hasDistance = false
+        var hasDuration = false
+        for (t in texts) {
+            FARE_REGEX.find(t)?.let { m ->
+                val v = m.groupValues[1].replace(",", ".").toDoubleOrNull()
+                if (v != null && v > maxFare) maxFare = v
+            }
+            if (DISTANCE_REGEX.containsMatchIn(t)) hasDistance = true
+            if (DURATION_REGEX.containsMatchIn(t)) hasDuration = true
+        }
+        return maxFare > 1.0 && (hasDistance || hasDuration)
     }
 
     private fun persistRelevantCapture(info: String) {
@@ -130,14 +145,22 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         writeCaptureFile("last_capture.txt", info)
     }
 
-    /** Grava a captura bruta do evento atual (mesmo sem cara de oferta), para diagnóstico. */
-    private fun persistRawEvent(packageName: String, event: AccessibilityEvent, texts: Collection<String>) {
+    /** Log rolante (append, com teto) de tudo que for lido — permite achar o momento da oferta. */
+    private fun appendCaptureLog(packageName: String, eventType: Int, texts: Collection<String>) {
         val now = System.currentTimeMillis()
-        if (now - lastRawAt < 1000) return
-        lastRawAt = now
-        val content = "pkg=$packageName • evento=${event.eventType}\n[" +
-            texts.joinToString(" | ").take(2000) + "]"
-        writeCaptureFile("last_event.txt", content)
+        if (now - lastLogAt < 1000) return
+        lastLogAt = now
+        val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now))
+        val entry = "---- $stamp • pkg=$packageName • ev=$eventType • n=${texts.size}\n" +
+            texts.joinToString(" | ").take(1200) + "\n"
+        try {
+            val dir = getExternalMediaDirs()?.firstOrNull() ?: getExternalFilesDir(null) ?: return
+            val file = File(dir, "capture_log.txt")
+            val merged = (if (file.exists()) file.readText() else "") + entry
+            file.writeText(if (merged.length > 60000) merged.takeLast(60000) else merged)
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao gravar capture_log.txt: ${e.message}")
+        }
     }
 
     private fun writeCaptureFile(name: String, content: String) {
@@ -172,5 +195,9 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "OpenDriver"
+
+        private val FARE_REGEX = Regex("""R\$\s*([0-9]+[.,][0-9]{2})""", RegexOption.IGNORE_CASE)
+        private val DISTANCE_REGEX = Regex("""[0-9]+(?:[.,][0-9]+)?\s*km""", RegexOption.IGNORE_CASE)
+        private val DURATION_REGEX = Regex("""[0-9]+\s*min""", RegexOption.IGNORE_CASE)
     }
 }

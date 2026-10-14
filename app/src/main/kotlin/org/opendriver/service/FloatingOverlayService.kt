@@ -69,10 +69,9 @@ class FloatingOverlayService : Service() {
             return START_NOT_STICKY
         }
 
-        currentResult?.let { res ->
-            showTrigger()
-            showCard(res)
-        }
+        // O botão flutuante fica visível enquanto o Copiloto estiver ligado.
+        showTrigger()
+        currentResult?.let { res -> showCard(res) }
 
         return START_NOT_STICKY
     }
@@ -481,6 +480,15 @@ class FloatingOverlayService : Service() {
 
         fun showResult(context: Context, result: ViabilityResult) {
             currentResult = result
+            startService(context)
+        }
+
+        /** Mostra apenas o botão flutuante (sem card), usado quando o Copiloto é ligado. */
+        fun enable(context: Context) {
+            startService(context)
+        }
+
+        private fun startService(context: Context) {
             val intent = Intent(context, FloatingOverlayService::class.java).apply {
                 action = ACTION_SHOW
             }
