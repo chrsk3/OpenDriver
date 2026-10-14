@@ -268,6 +268,11 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
         private val DISTANCE_REGEX = Regex("[0-9]+(?:[.,][0-9]+)?" + SP + "*km", RegexOption.IGNORE_CASE)
         private val DURATION_REGEX = Regex("[0-9]+" + SP + "*min", RegexOption.IGNORE_CASE)
-        private val ACCEPT_REGEX = Regex("Aceitar|Recusar|Nova viagem|Nova corrida", RegexOption.IGNORE_CASE)
+        // Uber: "Aceitar" só em corrida exclusiva; no radar a maioria mostra "Selecionar".
+        // 99/inDrive usam "Aceitar". Cobrimos todas as variantes do botão de aceite.
+        private val ACCEPT_REGEX = Regex(
+            "Aceitar|Recusar|Selecionar|Escolher|Nova viagem|Nova corrida",
+            RegexOption.IGNORE_CASE
+        )
     }
 }
