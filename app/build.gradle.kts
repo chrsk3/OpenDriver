@@ -66,5 +66,9 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-extended")
 
+    // OCR das ofertas: a Uber não expõe o texto da corrida na árvore de acessibilidade,
+    // então lemos a tela via screenshot (AccessibilityService.takeScreenshot) + ML Kit.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
     testImplementation("junit:junit:4.13.2")
 }

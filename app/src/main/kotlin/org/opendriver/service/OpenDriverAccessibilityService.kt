@@ -1,10 +1,18 @@
 package org.opendriver.service
 
 import android.accessibilityservice.AccessibilityService
+import android.graphics.Bitmap
+import android.os.Build
 import android.util.Log
+import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.opendriver.core.calculator.ViabilityEngine
+import org.opendriver.core.model.RideOffer
 import org.opendriver.data.PreferencesRepository
 import org.opendriver.parser.RideTextParser
 import java.io.File
@@ -13,8 +21,13 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Serviço de acessibilidade que monitora a tela para capturar dados
- * de corridas da Uber e 99 no instante em que a chamada toca.
+ * Serviço de acessibilidade que captura ofertas de corrida da Uber/99.
+ *
+ * A árvore de acessibilidade dos apps de corrida NÃO expõe o texto da oferta
+ * (só o chrome do sistema). Por isso, quando a leitura por nós não conclui nada,
+ * tiramos um screenshot via [AccessibilityService.takeScreenshot] e rodamos OCR
+ * (ML Kit) para extrair valor/distância/tempo — mesma técnica usada por apps
+ * concorrentes.
  */
 class OpenDriverAccessibilityService : AccessibilityService() {
 
@@ -24,6 +37,9 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     private var eventsSeen: Int = 0
     private var lastCounterPersist: Long = 0
     private var lastLogAt: Long = 0
+    private var lastOcrAt: Long = 0
+
+    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
     override fun onCreate() {
         super.onCreate()
@@ -39,62 +55,116 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
         countEvent()
 
-        if (!preferencesRepo.getCopilotEnabled() || !preferencesRepo.getEarningsCalcEnabled()) {
-            return
-        }
+        if (!preferencesRepo.getCopilotEnabled()) return
 
-        val ownPackage = this.packageName
+        // 1) Tentativa barata: ler o texto da árvore de acessibilidade.
         val texts = LinkedHashSet<String>()
-
-        // 1) Texto carregado no próprio evento — captura direta do que mudou na tela.
         for (i in event.text.indices) {
             event.text[i]?.toString()?.let { normalize(it) }?.takeIf { it.isNotEmpty() }?.let { texts.add(it) }
         }
         event.contentDescription?.toString()?.let { normalize(it) }?.takeIf { it.isNotEmpty() }?.let { texts.add(it) }
 
-        // 2) Varredura das janelas (oferta costuma vir em popup/janela secundária).
         val activeRoot = rootInActiveWindow
-        if (activeRoot != null && activeRoot.packageName?.toString() != ownPackage) {
+        if (activeRoot != null && activeRoot.packageName?.toString() != this.packageName) {
             extractTextNodes(activeRoot, texts)
         }
         try {
             windows?.forEach { window ->
                 val root = window.root ?: return@forEach
-                if (root.packageName?.toString() == ownPackage) return@forEach
+                if (root.packageName?.toString() == this.packageName) return@forEach
                 extractTextNodes(root, texts)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Falha ao enumerar janelas: ${e.message}")
         }
 
-        if (texts.isEmpty()) return
-
-        appendCaptureLog(packageName, event.eventType, texts)
-
-        // Ignora ruído (home offline "R$ 0,00", Recentes, barra de notificações):
-        // só registra/analisa capturas que tenham valor real (> R$1) E distância/tempo.
-        if (!looksLikeOffer(texts)) return
-
-        val offer = RideTextParser.parse(packageName, texts.toList())
-        if (offer == null) {
-            persistRelevantCapture(
-                "pkg=$packageName • ${texts.size} textos, oferta NÃO reconhecida\n" +
-                    "[" + texts.joinToString(" | ").take(1600) + "]"
-            )
-            return
+        if (texts.isNotEmpty()) {
+            appendCaptureLog("tree", packageName, event.eventType, texts)
+            if (looksLikeOffer(texts)) {
+                RideTextParser.parse(packageName, texts.toList())?.let { offer ->
+                    if (publishOffer(offer, packageName)) return
+                }
+            }
         }
 
-        val offerKey = "${offer.platform}_${offer.grossFare}_${offer.totalDistanceKm}"
-        val now = System.currentTimeMillis()
-        if (offerKey == lastOfferKey && (now - lastOfferTimestamp) < 6000) return
+        // 2) A oferta da Uber não aparece na árvore: tenta OCR da tela.
+        maybeRunOcr(packageName)
+    }
 
-        lastOfferKey = offerKey
+    // ── OCR (screenshot + ML Kit) ────────────────────────────────────────────
+
+    private fun maybeRunOcr(packageName: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return // takeScreenshot é API 30+
+
+        val now = System.currentTimeMillis()
+        if (now - lastOcrAt < 2500) return
+        lastOcrAt = now
+
+        try {
+            takeScreenshot(
+                Display.DEFAULT_DISPLAY,
+                ContextCompat.getMainExecutor(this),
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                        val buffer = result.hardwareBuffer
+                        val bitmap = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+                        buffer.close()
+                        if (bitmap == null) {
+                            Log.w(TAG, "OCR: bitmap nulo")
+                            return
+                        }
+                        runOcr(packageName, bitmap)
+                    }
+
+                    override fun onFailure(errorCode: Int) {
+                        Log.w(TAG, "takeScreenshot falhou: $errorCode")
+                        appendLogLine("screenshot FAIL code=$errorCode pkg=$packageName")
+                    }
+                }
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "takeScreenshot exceção: ${e.message}")
+        }
+    }
+
+    private fun runOcr(packageName: String, bitmap: Bitmap) {
+        val image = InputImage.fromBitmap(bitmap, 0)
+        recognizer.process(image)
+            .addOnSuccessListener { vision ->
+                val lines = mutableListOf<String>()
+                for (block in vision.textBlocks) {
+                    for (line in block.lines) {
+                        val t = normalize(line.text)
+                        if (t.isNotEmpty()) lines.add(t)
+                    }
+                }
+                bitmap.recycle()
+
+                appendCaptureLog("ocr", packageName, -1, lines)
+
+                val offer = RideTextParser.parse(packageName, lines)
+                if (offer != null) publishOffer(offer, packageName)
+            }
+            .addOnFailureListener { e ->
+                bitmap.recycle()
+                Log.w(TAG, "OCR falhou: ${e.message}")
+            }
+    }
+
+    // ── Publicação do resultado ──────────────────────────────────────────────
+
+    private fun publishOffer(offer: RideOffer, packageName: String): Boolean {
+        val key = "${offer.platform}_${offer.grossFare}_${offer.totalDistanceKm}"
+        val now = System.currentTimeMillis()
+        if (key == lastOfferKey && now - lastOfferTimestamp < 8000) return false
+
+        lastOfferKey = key
         lastOfferTimestamp = now
         Log.i(TAG, "Oferta reconhecida: $offer")
 
         val profile = preferencesRepo.getVehicleProfile()
-        val preferences = preferencesRepo.getDriverPreferences()
-        val result = ViabilityEngine.evaluate(offer, profile, preferences)
+        val prefs = preferencesRepo.getDriverPreferences()
+        val result = ViabilityEngine.evaluate(offer, profile, prefs)
 
         persistRelevantCapture(
             "pkg=$packageName • OK\n" +
@@ -104,7 +174,10 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         )
 
         FloatingOverlayService.showResult(this, result)
+        return true
     }
+
+    // ── Utilidades ───────────────────────────────────────────────────────────
 
     private fun countEvent() {
         eventsSeen++
@@ -121,10 +194,6 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 packageName.contains("didiglobal", ignoreCase = true) ||
                 packageName.contains("indrive", ignoreCase = true)
 
-    /**
-     * Heurística para não confundir a home (que tem "R$ 0,00") com uma oferta:
-     * exige um valor monetário real (> R$1) E sinal de distância (km) ou tempo (min).
-     */
     private fun looksLikeOffer(texts: Collection<String>): Boolean {
         var maxFare = 0.0
         var hasDistance = false
@@ -140,66 +209,54 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         return maxFare > 1.0 && (hasDistance || hasDuration)
     }
 
-    private fun persistRelevantCapture(info: String) {
-        preferencesRepo.setLastCaptureInfo(info)
-        writeCaptureFile("last_capture.txt", info)
-    }
-
-    /** Log rolante (append, com teto) de tudo que for lido — permite achar o momento da oferta. */
-    private fun appendCaptureLog(packageName: String, eventType: Int, texts: Collection<String>) {
-        val now = System.currentTimeMillis()
-        if (now - lastLogAt < 500) return
-        lastLogAt = now
-        val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now))
-        val entry = "---- $stamp • pkg=$packageName • ev=$eventType • n=${texts.size}\n" +
-            texts.joinToString(" | ").take(1200) + "\n"
-        try {
-            val dir = getExternalMediaDirs()?.firstOrNull() ?: getExternalFilesDir(null) ?: return
-            val file = File(dir, "capture_log.txt")
-            val merged = (if (file.exists()) file.readText() else "") + entry
-            file.writeText(if (merged.length > 120000) merged.takeLast(120000) else merged)
-        } catch (e: Exception) {
-            Log.w(TAG, "Falha ao gravar capture_log.txt: ${e.message}")
-        }
-    }
-
-    private fun writeCaptureFile(name: String, content: String) {
-        // Android/media/<pkg> é acessível pelo gerenciador de arquivos e legível de fora do app.
-        try {
-            val dir = getExternalMediaDirs()?.firstOrNull() ?: getExternalFilesDir(null)
-            dir?.let { File(it, name).writeText(content) }
-        } catch (e: Exception) {
-            Log.w(TAG, "Falha ao gravar $name: ${e.message}")
-        }
-    }
-
-    /** Normaliza espaços unicode (NBSP) que quebram os regex de valor/distância. */
     private fun normalize(raw: String): String =
         raw.replace(' ', ' ').replace(' ', ' ').trim()
 
     private fun extractTextNodes(node: AccessibilityNodeInfo?, output: MutableCollection<String>) {
         if (node == null) return
-
-        node.text?.toString()?.let { normalize(it) }?.let {
-            if (it.isNotEmpty()) output.add(it)
-        }
-
-        node.contentDescription?.toString()?.let { normalize(it) }?.let {
-            if (it.isNotEmpty()) output.add(it)
-        }
-
+        node.text?.toString()?.let { normalize(it) }?.let { if (it.isNotEmpty()) output.add(it) }
+        node.contentDescription?.toString()?.let { normalize(it) }?.let { if (it.isNotEmpty()) output.add(it) }
         for (i in 0 until node.childCount) {
             extractTextNodes(node.getChild(i), output)
         }
     }
 
-    override fun onInterrupt() {
-        // Chamado quando o sistema interrompe o serviço de acessibilidade
+    private fun mediaDir(): File? = getExternalMediaDirs()?.firstOrNull() ?: getExternalFilesDir(null)
+
+    private fun appendLogLine(content: String) {
+        try {
+            val dir = mediaDir() ?: return
+            val file = File(dir, "capture_log.txt")
+            val merged = (if (file.exists()) file.readText() else "") + content + "\n"
+            file.writeText(if (merged.length > 160000) merged.takeLast(160000) else merged)
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao gravar log: ${e.message}")
+        }
     }
+
+    private fun appendCaptureLog(source: String, packageName: String, eventType: Int, texts: Collection<String>) {
+        val now = System.currentTimeMillis()
+        if (now - lastLogAt < 500) return
+        lastLogAt = now
+        val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now))
+        val entry = "---- $stamp • $source • pkg=$packageName • ev=$eventType • n=${texts.size}\n" +
+            texts.joinToString(" | ").take(1500)
+        appendLogLine(entry)
+    }
+
+    private fun persistRelevantCapture(info: String) {
+        preferencesRepo.setLastCaptureInfo(info)
+        try {
+            mediaDir()?.let { File(it, "last_capture.txt").writeText(info) }
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao gravar captura: ${e.message}")
+        }
+    }
+
+    override fun onInterrupt() {}
 
     companion object {
         private const val TAG = "OpenDriver"
-
         private const val SP = "[\\s\\u00A0\\u202F]"
         private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
         private val DISTANCE_REGEX = Regex("[0-9]+(?:[.,][0-9]+)?" + SP + "*km", RegexOption.IGNORE_CASE)
