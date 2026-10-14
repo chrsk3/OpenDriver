@@ -9,10 +9,12 @@ import org.opendriver.core.model.RideOffer
  */
 object RideTextParser {
 
-    private val FARE_REGEX = Regex("""R\$\s*([0-9]+[.,][0-9]{2})""", RegexOption.IGNORE_CASE)
-    private val DISTANCE_REGEX = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*km""", RegexOption.IGNORE_CASE)
-    private val DURATION_REGEX = Regex("""([0-9]+)\s*min""", RegexOption.IGNORE_CASE)
-    private val RATING_REGEX = Regex("""(?:★\s*([3-5][.,][0-9]{1,2})|([3-5][.,][0-9]{1,2})\s*★)""")
+    // Apps usam espaço inquebrável (U+00A0) entre "R$" e o valor; por isso \s não basta.
+    private const val SP = "[\\s\\u00A0\\u202F]"
+    private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
+    private val DISTANCE_REGEX = Regex("([0-9]+(?:[.,][0-9]+)?)" + SP + "*km", RegexOption.IGNORE_CASE)
+    private val DURATION_REGEX = Regex("([0-9]+)" + SP + "*min", RegexOption.IGNORE_CASE)
+    private val RATING_REGEX = Regex("(?:★" + SP + "*([3-5][.,][0-9]{1,2})|([3-5][.,][0-9]{1,2})" + SP + "*★)")
 
     /**
      * Analisa uma lista de textos coletados da tela do app e tenta montar uma RideOffer válida.

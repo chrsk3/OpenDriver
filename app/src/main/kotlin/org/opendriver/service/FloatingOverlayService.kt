@@ -198,7 +198,8 @@ class FloatingOverlayService : Service() {
                             removeEverything()
                             stopSelf()
                         } else {
-                            toggleCard()
+                            // Clique no botão flutuante abre o app do OpenDriver.
+                            openApp()
                         }
                     }
                     true
@@ -208,11 +209,15 @@ class FloatingOverlayService : Service() {
         }
     }
 
-    private fun toggleCard() {
-        if (cardView != null) {
-            removeCard()
-        } else {
-            currentResult?.let { showCard(it) }
+    private fun openApp() {
+        try {
+            val intent = Intent(this, org.opendriver.ui.MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            startActivity(intent)
+            logLine("trigger tap -> open MainActivity")
+        } catch (e: Exception) {
+            logLine("openApp FAIL: ${e.message}")
         }
     }
 
