@@ -33,7 +33,7 @@ import org.opendriver.data.PreferencesRepository
 import org.opendriver.service.FloatingOverlayService
 
 /** Telas navegáveis do app. */
-enum class Screen { HOME, COPILOT, EARNINGS, EDIT, DETAILS }
+enum class Screen { HOME, COPILOT, EARNINGS, EDIT, DETAILS, HISTORY }
 
 class MainActivity : ComponentActivity() {
 
@@ -71,7 +71,12 @@ class MainActivity : ComponentActivity() {
                             onBack = { screen = Screen.HOME },
                             onDetails = { screen = Screen.DETAILS },
                             onEdit = { screen = Screen.EDIT },
-                            onTestBubble = { simularCorrida() }
+                            onTestBubble = { simularCorrida() },
+                            onHistory = { screen = Screen.HISTORY }
+                        )
+                        Screen.HISTORY -> HistoryScreen(
+                            repo = repo,
+                            onBack = { screen = Screen.EARNINGS }
                         )
                         Screen.EDIT -> EditScreen(
                             repo = repo,

@@ -115,8 +115,10 @@ class FloatingOverlayService : Service() {
             return
         }
 
-        val opacity = PreferencesRepository(this).getFloatingButtonOpacity()
-        val size = dp(60f)
+        val prefs = PreferencesRepository(this)
+        val opacity = prefs.getFloatingButtonOpacity()
+        val fscale = prefs.getFloatingButtonSize().scale
+        val size = dp(60f * fscale)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -133,13 +135,13 @@ class FloatingOverlayService : Service() {
 
         val trigger = TextView(this).apply {
             text = "🚗" // 🚗
-            textSize = 26f
+            textSize = 26f * fscale
             gravity = Gravity.CENTER
             layoutParams = LinearLayout.LayoutParams(size, size)
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#00E676"))
-                setStroke(dp(2f), Color.parseColor("#B0FFFFFF"))
+                setStroke(dp(2f * fscale).coerceAtLeast(1), Color.parseColor("#B0FFFFFF"))
             }
             alpha = opacity / 100f
         }

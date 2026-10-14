@@ -29,7 +29,8 @@ fun EarningsScreen(
     onBack: () -> Unit,
     onDetails: () -> Unit,
     onEdit: () -> Unit,
-    onTestBubble: () -> Unit
+    onTestBubble: () -> Unit,
+    onHistory: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scroll = rememberScrollState()
@@ -51,6 +52,7 @@ fun EarningsScreen(
     var opacity by remember { mutableIntStateOf(repo.getFloatingButtonOpacity()) }
     var seconds by remember { mutableStateOf(repo.getCardDurationSeconds().toString()) }
     var textNotif by remember { mutableStateOf(repo.getTextNotificationEnabled()) }
+    var cardSize by remember { mutableStateOf(repo.getBubbleSize()) }
 
     val metaSemanal = repo.getMetaSemanal()
 
@@ -66,7 +68,7 @@ fun EarningsScreen(
 
             // ── Histórico ───────────────────────────────────────────────────
             Card(
-                modifier = Modifier.fillMaxWidth().clickable { onDetails() },
+                modifier = Modifier.fillMaxWidth().clickable { onHistory() },
                 colors = CardDefaults.cardColors(containerColor = CARD),
                 shape = RoundedCornerShape(16.dp)
             ) {
@@ -149,7 +151,7 @@ fun EarningsScreen(
                     title = "Ganho por Km",
                     value = prefs.ruimNetPerKm.toFloat()..prefs.minNetPerKm.toFloat(),
                     valueRange = 0f..8f,
-                    steps = 15,
+                    steps = 79,
                     format = { "R$ ${"%.2f".format(it)}" },
                     onValueChange = { r -> savePrefs(prefs.copy(ruimNetPerKm = r.start.toDouble(), minNetPerKm = r.endInclusive.toDouble())) }
                 )
@@ -157,7 +159,7 @@ fun EarningsScreen(
                     title = "Ganho por Hora",
                     value = prefs.ruimNetHourlyRate.toFloat()..prefs.minNetHourlyRate.toFloat(),
                     valueRange = 0f..120f,
-                    steps = 23,
+                    steps = 119,
                     format = { "R$ ${"%.0f".format(it)}" },
                     onValueChange = { r -> savePrefs(prefs.copy(ruimNetHourlyRate = r.start.toDouble(), minNetHourlyRate = r.endInclusive.toDouble())) }
                 )
@@ -165,7 +167,7 @@ fun EarningsScreen(
                     title = "Nota do passageiro",
                     value = prefs.ruimPassengerRating.toFloat()..prefs.minPassengerRating.toFloat(),
                     valueRange = 3f..5f,
-                    steps = 19,
+                    steps = 199,
                     format = { "%.2f ★".format(it) },
                     onValueChange = { r -> savePrefs(prefs.copy(ruimPassengerRating = r.start.toDouble(), minPassengerRating = r.endInclusive.toDouble())) }
                 )
@@ -178,6 +180,19 @@ fun EarningsScreen(
             CardPreview(metrics = metrics, theme = theme, palette = palette)
             Spacer(Modifier.height(10.dp))
             SectionCard {
+                Text("Tamanho do Card", fontSize = 12.sp, color = TextMuted())
+                Spacer(Modifier.height(6.dp))
+                SingleChoiceChips(
+                    options = org.opendriver.core.model.BubbleSize.entries.map { it.displayName },
+                    selected = cardSize.displayName,
+                    onSelect = { label ->
+                        val size = org.opendriver.core.model.BubbleSize.entries.first { it.displayName == label }
+                        cardSize = size
+                        repo.setBubbleSize(size)
+                    }
+                )
+
+                Spacer(Modifier.height(14.dp))
                 Text("Ordem das métricas", fontSize = 12.sp, color = TextMuted())
                 Spacer(Modifier.height(6.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

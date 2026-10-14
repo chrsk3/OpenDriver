@@ -15,6 +15,8 @@ class PreferencesRepository(context: Context) {
     private val prefs: SharedPreferences =
         context.getSharedPreferences("opendriver_prefs", Context.MODE_PRIVATE)
 
+    private val historyFile = java.io.File(context.filesDir, "ride_history.csv")
+
     // === Copiloto & Bolha Flutuante ===
 
     fun getCopilotEnabled(): Boolean = prefs.getBoolean("copilot_enabled", true)
@@ -23,11 +25,20 @@ class PreferencesRepository(context: Context) {
     fun getEarningsCalcEnabled(): Boolean = prefs.getBoolean("earnings_calc_enabled", true)
     fun setEarningsCalcEnabled(enabled: Boolean) = prefs.edit().putBoolean("earnings_calc_enabled", enabled).apply()
 
+    /** Tamanho do CARD de resultado. */
     fun getBubbleSize(): BubbleSize {
         val name = prefs.getString("bubble_size", BubbleSize.MEDIO.name) ?: BubbleSize.MEDIO.name
         return try { BubbleSize.valueOf(name) } catch (_: Exception) { BubbleSize.MEDIO }
     }
     fun setBubbleSize(size: BubbleSize) = prefs.edit().putString("bubble_size", size.name).apply()
+
+    /** Tamanho do BOTÃO flutuante (trigger). */
+    fun getFloatingButtonSize(): BubbleSize {
+        val name = prefs.getString("floating_button_size", BubbleSize.MEDIO.name) ?: BubbleSize.MEDIO.name
+        return try { BubbleSize.valueOf(name) } catch (_: Exception) { BubbleSize.MEDIO }
+    }
+    fun setFloatingButtonSize(size: BubbleSize) =
+        prefs.edit().putString("floating_button_size", size.name).apply()
 
     /** Opacidade (10–100) do botão flutuante que abre/fecha o card de resultado. */
     fun getFloatingButtonOpacity(): Int =
@@ -224,6 +235,31 @@ class PreferencesRepository(context: Context) {
     /** Publica notificação de texto com os detalhes da corrida. */
     fun getTextNotificationEnabled(): Boolean = prefs.getBoolean("text_notification", true)
     fun setTextNotificationEnabled(v: Boolean) = prefs.edit().putBoolean("text_notification", v).apply()
+
+    // === Histórico de corridas capturadas ===
+
+    /** Linha: timestamp;plataforma;valor;km;lucro;status */
+    fun addHistoryEntry(line: String) {
+        try {
+            val existing = if (historyFile.exists()) historyFile.readLines() else emptyList()
+            val kept = (existing + line).takeLast(200)
+            historyFile.writeText(kept.joinToString("\n"))
+        } catch (_: Exception) {}
+    }
+
+    /** Mais recentes primeiro. */
+    fun getHistory(): List<RideHistoryEntry> {
+        if (!historyFile.exists()) return emptyList()
+        return try {
+            historyFile.readLines().mapNotNull { RideHistoryEntry.parse(it) }.reversed()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    fun clearHistory() {
+        try { historyFile.delete() } catch (_: Exception) {}
+    }
 
     // === Ganho acumulado (simulado para tela de detalhes) ===
     fun getGanhoSemanal(): Double = prefs.getFloat("ganho_semanal", 3322f).toDouble()

@@ -21,7 +21,7 @@ import org.opendriver.data.PreferencesRepository
 @Composable
 fun CopilotScreen(repo: PreferencesRepository, onBack: () -> Unit) {
     val scroll = rememberScrollState()
-    var bubbleSize by remember { mutableStateOf(repo.getBubbleSize()) }
+    var buttonSize by remember { mutableStateOf(repo.getFloatingButtonSize()) }
     var opacity by remember { mutableIntStateOf(repo.getFloatingButtonOpacity()) }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -40,16 +40,16 @@ fun CopilotScreen(repo: PreferencesRepository, onBack: () -> Unit) {
                         Text("Tamanho", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
                         Text("Escolha entre pequeno, médio ou grande", fontSize = 11.sp, color = TEXT_MUTED)
                     }
-                    Text(bubbleSize.displayName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ACCENT)
+                    Text(buttonSize.displayName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ACCENT)
                 }
                 Spacer(Modifier.height(12.dp))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BubbleSize.entries.forEach { size ->
-                        val selected = bubbleSize == size
+                        val selected = buttonSize == size
                         OutlinedButton(
                             onClick = {
-                                bubbleSize = size
-                                repo.setBubbleSize(size)
+                                buttonSize = size
+                                repo.setFloatingButtonSize(size)
                             },
                             modifier = Modifier.weight(1f),
                             colors = ButtonDefaults.outlinedButtonColors(

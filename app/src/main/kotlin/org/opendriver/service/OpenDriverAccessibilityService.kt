@@ -199,6 +199,16 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 "lucro R$ ${"%.2f".format(result.netProfit)} • ${result.status.label}"
         )
 
+        val entry = org.opendriver.data.RideHistoryEntry(
+            timeMs = System.currentTimeMillis(),
+            platform = result.offer.platform.displayName,
+            fare = result.offer.grossFare,
+            distanceKm = result.offer.totalDistanceKm,
+            profit = result.netProfit,
+            status = result.status.label
+        )
+        ioExecutor.execute { preferencesRepo.addHistoryEntry(entry.serialize()) }
+
         FloatingOverlayService.showResult(this, result)
         return true
     }
