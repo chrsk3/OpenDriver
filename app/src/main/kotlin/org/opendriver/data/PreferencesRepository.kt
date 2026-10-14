@@ -37,6 +37,14 @@ class PreferencesRepository(context: Context) {
         .putInt("floating_button_opacity", opacity.coerceIn(10, 100))
         .apply()
 
+    // === Diagnóstico do leitor de corridas (acessibilidade) ===
+
+    fun getLastCaptureInfo(): String =
+        prefs.getString("last_capture_info", "Nenhuma captura ainda. Abra um app de corrida.")
+            ?: "Nenhuma captura ainda. Abra um app de corrida."
+
+    fun setLastCaptureInfo(info: String) = prefs.edit().putString("last_capture_info", info).apply()
+
     // === Aplicativos selecionados ===
 
     fun getSelectedApps(): Set<String> =

@@ -1129,6 +1129,25 @@ fun CopilotSettingsDialog(
 
                 Spacer(Modifier.height(16.dp))
 
+                // Diagnóstico do leitor (última captura de corrida)
+                Card(colors = CardDefaults.cardColors(containerColor = CARD_INNER), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.BugReport, null, tint = ACCENT, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Text("Diagnóstico do Leitor", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                        }
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            repo.getLastCaptureInfo(),
+                            fontSize = 11.sp,
+                            color = Color(0xFFB0BEC5)
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
                 Button(
                     onClick = { onTestBubble(); onDismiss() },
                     modifier = Modifier.fillMaxWidth(),

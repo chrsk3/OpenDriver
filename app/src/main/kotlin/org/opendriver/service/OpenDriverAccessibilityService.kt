@@ -1,8 +1,7 @@
 package org.opendriver.service
 
 import android.accessibilityservice.AccessibilityService
-import android.content.Intent
-import android.os.Build
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import org.opendriver.core.calculator.ViabilityEngine
@@ -18,6 +17,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     private lateinit var preferencesRepo: PreferencesRepository
     private var lastOfferKey: String = ""
     private var lastOfferTimestamp: Long = 0
+    private var lastDebugAt: Long = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -29,23 +29,19 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
         val packageName = event.packageName?.toString() ?: return
 
-        // Verifica se o evento pertence a algum app monitorado
-        val isTargetApp = packageName.contains("ubercab", ignoreCase = true) ||
-                packageName.contains("taxis99", ignoreCase = true) ||
-                packageName.contains("didiglobal", ignoreCase = true) ||
-                packageName.contains("indrive", ignoreCase = true)
+        // Só processa eventos de apps de corrida monitorados
+        if (!isTargetApp(packageName)) return
 
-        if (!isTargetApp) return
-
-        // Verifica se o Copiloto e o Cálculo de Ganhos estão ativos
+        // Copiloto e Cálculo de Ganhos precisam estar ligados
         if (!preferencesRepo.getCopilotEnabled() || !preferencesRepo.getEarningsCalcEnabled()) {
+            persistDebug("pkg=$packageName • leitura pausada (Copiloto/Cálculo desligado)")
             return
         }
 
         // Extrai o conteúdo visível de TODAS as janelas: a oferta da Uber/99 costuma
         // aparecer num popup (janela secundária) e não na janela ativa do app base.
         // Ignora a própria janela do OpenDriver para não capturar o texto do overlay.
-        val ownPackage = packageName
+        val ownPackage = this.packageName
         val texts = LinkedHashSet<String>()
         val activeRoot = rootInActiveWindow
         if (activeRoot != null && activeRoot.packageName?.toString() != ownPackage) {
@@ -57,14 +53,22 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 if (root.packageName?.toString() == ownPackage) return@forEach
                 extractTextNodes(root, texts)
             }
-        } catch (_: Exception) {
-            // Sem permissão/estado inválido para enumerar janelas: segue com o que já tem.
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao enumerar janelas: ${e.message}")
         }
 
-        if (texts.isEmpty()) return
+        if (texts.isEmpty()) {
+            persistDebug("pkg=$packageName • evento=${event.eventType} • nenhum texto capturado")
+            return
+        }
 
         // Analisa o texto capturado procurando uma oferta válida
-        val offer = RideTextParser.parse(packageName, texts.toList()) ?: return
+        val offer = RideTextParser.parse(packageName, texts.toList())
+        if (offer == null) {
+            val preview = texts.take(12).joinToString(" | ").take(400)
+            persistDebug("pkg=$packageName • ${texts.size} textos, oferta NÃO reconhecida\n[$preview]")
+            return
+        }
 
         // Evita reprocessar a mesma oferta repetidamente em intervalos menores que 6 segundos
         val offerKey = "${offer.platform}_${offer.grossFare}_${offer.totalDistanceKm}"
@@ -76,13 +80,35 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         lastOfferKey = offerKey
         lastOfferTimestamp = now
 
+        Log.i(TAG, "Oferta reconhecida: $offer")
+
         // Carrega as configurações do motorista e calcula a viabilidade
         val profile = preferencesRepo.getVehicleProfile()
         val preferences = preferencesRepo.getDriverPreferences()
         val result = ViabilityEngine.evaluate(offer, profile, preferences)
 
+        persistDebug(
+            "pkg=$packageName • OK\n" +
+                "R$ ${"%.2f".format(result.offer.grossFare)} • " +
+                "${"%.1f".format(result.offer.totalDistanceKm)} km • " +
+                "lucro R$ ${"%.2f".format(result.netProfit)} • ${result.status.label}"
+        )
+
         // Envia o resultado para a bolha flutuante
         FloatingOverlayService.showResult(this, result)
+    }
+
+    private fun isTargetApp(packageName: String): Boolean =
+        packageName.contains("ubercab", ignoreCase = true) ||
+                packageName.contains("taxis99", ignoreCase = true) ||
+                packageName.contains("didiglobal", ignoreCase = true) ||
+                packageName.contains("indrive", ignoreCase = true)
+
+    private fun persistDebug(info: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastDebugAt < 1000) return
+        lastDebugAt = now
+        preferencesRepo.setLastCaptureInfo(info)
     }
 
     private fun extractTextNodes(node: AccessibilityNodeInfo?, output: MutableCollection<String>) {
@@ -103,5 +129,9 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     override fun onInterrupt() {
         // Chamado quando o sistema interrompe o serviço de acessibilidade
+    }
+
+    companion object {
+        private const val TAG = "OpenDriver"
     }
 }
