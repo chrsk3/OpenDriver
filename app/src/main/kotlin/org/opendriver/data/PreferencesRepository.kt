@@ -17,6 +17,18 @@ class PreferencesRepository(context: Context) {
 
     private val historyFile = java.io.File(context.filesDir, "ride_history.csv")
 
+    init {
+        // Migração única: força Copiloto e Cálculo de Ganhos a iniciarem desligados
+        // (instalações antigas tinham o padrão ligado).
+        if (!prefs.getBoolean("migr_defaults_off_v1", false)) {
+            prefs.edit()
+                .putBoolean("copilot_enabled", false)
+                .putBoolean("earnings_calc_enabled", false)
+                .putBoolean("migr_defaults_off_v1", true)
+                .apply()
+        }
+    }
+
     // === Copiloto & Bolha Flutuante ===
 
     fun getCopilotEnabled(): Boolean = prefs.getBoolean("copilot_enabled", false)
