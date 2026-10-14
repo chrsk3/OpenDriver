@@ -45,6 +45,10 @@ class PreferencesRepository(context: Context) {
 
     fun setLastCaptureInfo(info: String) = prefs.edit().putString("last_capture_info", info).apply()
 
+    /** Contador de eventos de apps de corrida vistos pelo serviço de acessibilidade. */
+    fun getReaderEventCount(): Int = prefs.getInt("reader_event_count", 0)
+    fun setReaderEventCount(count: Int) = prefs.edit().putInt("reader_event_count", count).apply()
+
     // === Aplicativos selecionados ===
 
     fun getSelectedApps(): Set<String> =

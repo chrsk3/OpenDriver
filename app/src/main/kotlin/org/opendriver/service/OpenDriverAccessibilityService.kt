@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import org.opendriver.core.calculator.ViabilityEngine
 import org.opendriver.data.PreferencesRepository
 import org.opendriver.parser.RideTextParser
+import java.io.File
 
 /**
  * Serviço de acessibilidade que monitora a tela para capturar dados
@@ -17,32 +18,37 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     private lateinit var preferencesRepo: PreferencesRepository
     private var lastOfferKey: String = ""
     private var lastOfferTimestamp: Long = 0
-    private var lastDebugAt: Long = 0
+    private var eventsSeen: Int = 0
+    private var lastCounterPersist: Long = 0
 
     override fun onCreate() {
         super.onCreate()
         preferencesRepo = PreferencesRepository(this)
+        eventsSeen = preferencesRepo.getReaderEventCount()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
 
         val packageName = event.packageName?.toString() ?: return
-
-        // Só processa eventos de apps de corrida monitorados
         if (!isTargetApp(packageName)) return
 
-        // Copiloto e Cálculo de Ganhos precisam estar ligados
+        countEvent()
+
         if (!preferencesRepo.getCopilotEnabled() || !preferencesRepo.getEarningsCalcEnabled()) {
-            persistDebug("pkg=$packageName • leitura pausada (Copiloto/Cálculo desligado)")
             return
         }
 
-        // Extrai o conteúdo visível de TODAS as janelas: a oferta da Uber/99 costuma
-        // aparecer num popup (janela secundária) e não na janela ativa do app base.
-        // Ignora a própria janela do OpenDriver para não capturar o texto do overlay.
         val ownPackage = this.packageName
         val texts = LinkedHashSet<String>()
+
+        // 1) Texto carregado no próprio evento — captura direta do que mudou na tela.
+        for (i in event.text.indices) {
+            event.text[i]?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { texts.add(it) }
+        }
+        event.contentDescription?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { texts.add(it) }
+
+        // 2) Varredura das janelas (oferta costuma vir em popup/janela secundária).
         val activeRoot = rootInActiveWindow
         if (activeRoot != null && activeRoot.packageName?.toString() != ownPackage) {
             extractTextNodes(activeRoot, texts)
@@ -57,45 +63,50 @@ class OpenDriverAccessibilityService : AccessibilityService() {
             Log.w(TAG, "Falha ao enumerar janelas: ${e.message}")
         }
 
-        if (texts.isEmpty()) {
-            persistDebug("pkg=$packageName • evento=${event.eventType} • nenhum texto capturado")
-            return
-        }
+        if (texts.isEmpty()) return
 
-        // Analisa o texto capturado procurando uma oferta válida
+        // Ignora ruído (Recentes, barra de notificações, etc.): só registra/analisa
+        // capturas que pareçam conter uma oferta (valor em R$, km ou min).
+        if (!looksLikeOffer(texts)) return
+
         val offer = RideTextParser.parse(packageName, texts.toList())
         if (offer == null) {
-            val preview = texts.take(12).joinToString(" | ").take(400)
-            persistDebug("pkg=$packageName • ${texts.size} textos, oferta NÃO reconhecida\n[$preview]")
+            persistRelevantCapture(
+                "pkg=$packageName • ${texts.size} textos, oferta NÃO reconhecida\n" +
+                    "[" + texts.joinToString(" | ").take(1600) + "]"
+            )
             return
         }
 
-        // Evita reprocessar a mesma oferta repetidamente em intervalos menores que 6 segundos
         val offerKey = "${offer.platform}_${offer.grossFare}_${offer.totalDistanceKm}"
         val now = System.currentTimeMillis()
-        if (offerKey == lastOfferKey && (now - lastOfferTimestamp) < 6000) {
-            return
-        }
+        if (offerKey == lastOfferKey && (now - lastOfferTimestamp) < 6000) return
 
         lastOfferKey = offerKey
         lastOfferTimestamp = now
-
         Log.i(TAG, "Oferta reconhecida: $offer")
 
-        // Carrega as configurações do motorista e calcula a viabilidade
         val profile = preferencesRepo.getVehicleProfile()
         val preferences = preferencesRepo.getDriverPreferences()
         val result = ViabilityEngine.evaluate(offer, profile, preferences)
 
-        persistDebug(
+        persistRelevantCapture(
             "pkg=$packageName • OK\n" +
                 "R$ ${"%.2f".format(result.offer.grossFare)} • " +
                 "${"%.1f".format(result.offer.totalDistanceKm)} km • " +
                 "lucro R$ ${"%.2f".format(result.netProfit)} • ${result.status.label}"
         )
 
-        // Envia o resultado para a bolha flutuante
         FloatingOverlayService.showResult(this, result)
+    }
+
+    private fun countEvent() {
+        eventsSeen++
+        val now = System.currentTimeMillis()
+        if (now - lastCounterPersist >= 1000) {
+            lastCounterPersist = now
+            preferencesRepo.setReaderEventCount(eventsSeen)
+        }
     }
 
     private fun isTargetApp(packageName: String): Boolean =
@@ -104,11 +115,23 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 packageName.contains("didiglobal", ignoreCase = true) ||
                 packageName.contains("indrive", ignoreCase = true)
 
-    private fun persistDebug(info: String) {
-        val now = System.currentTimeMillis()
-        if (now - lastDebugAt < 1000) return
-        lastDebugAt = now
+    /** Heurística: a captura tem cara de oferta se contém valor (R$), distância (km) ou tempo (min). */
+    private fun looksLikeOffer(texts: Collection<String>): Boolean = texts.any { t ->
+        t.contains("R$", ignoreCase = true) ||
+            Regex("""\d[.,]?\d*\s*km""", RegexOption.IGNORE_CASE).containsMatchIn(t) ||
+            Regex("""\d+\s*min""", RegexOption.IGNORE_CASE).containsMatchIn(t)
+    }
+
+    private fun persistRelevantCapture(info: String) {
         preferencesRepo.setLastCaptureInfo(info)
+        // Espelha a captura completa num arquivo compartilhável para depuração.
+        try {
+            getExternalFilesDir(null)?.let { dir ->
+                File(dir, "last_capture.txt").writeText(info)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Falha ao gravar arquivo de captura: ${e.message}")
+        }
     }
 
     private fun extractTextNodes(node: AccessibilityNodeInfo?, output: MutableCollection<String>) {

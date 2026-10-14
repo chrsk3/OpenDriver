@@ -1139,9 +1139,21 @@ fun CopilotSettingsDialog(
                         }
                         Spacer(Modifier.height(6.dp))
                         Text(
+                            "Eventos de corrida lidos: ${repo.getReaderEventCount()}",
+                            fontSize = 11.sp,
+                            color = ACCENT
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
                             repo.getLastCaptureInfo(),
                             fontSize = 11.sp,
                             color = Color(0xFFB0BEC5)
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Captura completa em Android/data/org.opendriver/files/last_capture.txt",
+                            fontSize = 10.sp,
+                            color = Color(0xFF607D8B)
                         )
                     }
                 }
