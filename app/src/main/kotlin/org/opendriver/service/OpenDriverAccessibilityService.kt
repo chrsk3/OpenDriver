@@ -42,16 +42,29 @@ class OpenDriverAccessibilityService : AccessibilityService() {
             return
         }
 
-        // Extrai todo o conteúdo visível da janela atual
-        val rootNode = rootInActiveWindow ?: return
-        val texts = mutableListOf<String>()
-        extractTextNodes(rootNode, texts)
-        rootNode.recycle()
+        // Extrai o conteúdo visível de TODAS as janelas: a oferta da Uber/99 costuma
+        // aparecer num popup (janela secundária) e não na janela ativa do app base.
+        // Ignora a própria janela do OpenDriver para não capturar o texto do overlay.
+        val ownPackage = packageName
+        val texts = LinkedHashSet<String>()
+        val activeRoot = rootInActiveWindow
+        if (activeRoot != null && activeRoot.packageName?.toString() != ownPackage) {
+            extractTextNodes(activeRoot, texts)
+        }
+        try {
+            windows?.forEach { window ->
+                val root = window.root ?: return@forEach
+                if (root.packageName?.toString() == ownPackage) return@forEach
+                extractTextNodes(root, texts)
+            }
+        } catch (_: Exception) {
+            // Sem permissão/estado inválido para enumerar janelas: segue com o que já tem.
+        }
 
         if (texts.isEmpty()) return
 
         // Analisa o texto capturado procurando uma oferta válida
-        val offer = RideTextParser.parse(packageName, texts) ?: return
+        val offer = RideTextParser.parse(packageName, texts.toList()) ?: return
 
         // Evita reprocessar a mesma oferta repetidamente em intervalos menores que 6 segundos
         val offerKey = "${offer.platform}_${offer.grossFare}_${offer.totalDistanceKm}"
@@ -72,7 +85,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         FloatingOverlayService.showResult(this, result)
     }
 
-    private fun extractTextNodes(node: AccessibilityNodeInfo?, output: MutableList<String>) {
+    private fun extractTextNodes(node: AccessibilityNodeInfo?, output: MutableCollection<String>) {
         if (node == null) return
 
         node.text?.toString()?.trim()?.let {
@@ -80,15 +93,11 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         }
 
         node.contentDescription?.toString()?.trim()?.let {
-            if (it.isNotEmpty() && !output.contains(it)) output.add(it)
+            if (it.isNotEmpty()) output.add(it)
         }
 
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (child != null) {
-                extractTextNodes(child, output)
-                child.recycle()
-            }
+            extractTextNodes(node.getChild(i), output)
         }
     }
 

@@ -19,7 +19,6 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
@@ -36,9 +35,9 @@ import kotlin.math.abs
  * Dois elementos distintos compõem o overlay:
  *  - O **botão flutuante** (trigger circular persistente) cuja opacidade é configurável
  *    e que abre/fecha o card de resultado.
- *  - O **card de resultado** (balão com o veredito da corrida), sempre 100% opaco,
- *    com todas as dimensões (borda, corner radius, padding, tipografia) escaladas
- *    pelo multiplicador do [BubbleSize] escolhido.
+ *  - O **card de resultado** (estilo "crachá": fundo branco, borda colorida pela
+ *    viabilidade e três métricas), sempre 100% opaco, com todas as dimensões
+ *    escaladas pelo multiplicador do [BubbleSize] escolhido.
  */
 class FloatingOverlayService : Service() {
 
@@ -49,7 +48,9 @@ class FloatingOverlayService : Service() {
     private var autoDismissRunnable: Runnable? = null
 
     private val density: Float get() = resources.displayMetrics.density
-    private fun dp(value: Int): Int = (value * density).toInt()
+    private fun dp(value: Float): Int = (value * density).toInt()
+
+    private val localeBr: Locale = Locale.forLanguageTag("pt-BR")
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -105,13 +106,12 @@ class FloatingOverlayService : Service() {
     private fun showTrigger() {
         val wm = windowManager ?: return
         if (triggerView != null) {
-            // Mantém a opacidade atualizada a cada nova corrida.
             triggerView?.alpha = PreferencesRepository(this).getFloatingButtonOpacity() / 100f
             return
         }
 
         val opacity = PreferencesRepository(this).getFloatingButtonOpacity()
-        val size = dp(60)
+        val size = dp(60f)
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -122,8 +122,8 @@ class FloatingOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            x = dp(16)
-            y = dp(120)
+            x = dp(16f)
+            y = dp(120f)
         }
 
         val trigger = TextView(this).apply {
@@ -134,7 +134,7 @@ class FloatingOverlayService : Service() {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(Color.parseColor("#00E676"))
-                setStroke(dp(2), Color.parseColor("#B0FFFFFF"))
+                setStroke(dp(2f), Color.parseColor("#B0FFFFFF"))
             }
             alpha = opacity / 100f
         }
@@ -176,8 +176,10 @@ class FloatingOverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    if (abs(dx) > dp(6) || abs(dy) > dp(6)) moved = true
-                    params.x = initialX + dx.toInt()
+                    if (abs(dx) > dp(6f) || abs(dy) > dp(6f)) moved = true
+                    // gravity = TOP|END: o eixo X é medido a partir da borda direita,
+                    // então o deslocamento horizontal tem sinal invertido em relação ao dedo.
+                    params.x = initialX - dx.toInt()
                     params.y = initialY + dy.toInt()
                     try {
                         wm.updateViewLayout(view, params)
@@ -225,16 +227,12 @@ class FloatingOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = dp(16)
-            y = dp(120)
+            x = dp(16f)
+            y = dp(120f)
         }
 
         val bubbleSize = PreferencesRepository(this).getBubbleSize()
         val view = createCardView(res, params, wm, bubbleSize)
-
-        // Escala usada apenas para derivar dimensões em px; NÃO aplicamos
-        // view.scaleX/scaleY — assim a borda, o corner radius e o padding
-        // acompanham exatamente o mesmo multiplicador do conteúdo.
         cardView = view
 
         try {
@@ -256,106 +254,155 @@ class FloatingOverlayService : Service() {
         wm: WindowManager,
         bubbleSize: BubbleSize
     ): View {
-        // Multiplicador único: todas as dimensões derivam dele, garantindo
-        // que borda, corner radius, padding e tipografia escalem juntos.
+        // Um único multiplicador deriva todas as dimensões: borda, corner radius,
+        // padding, tipografia e ícones escalam juntos em qualquer tamanho.
         val s = bubbleSize.scale
+        val accent = statusColor(res.status)
+        val textColor = Color.parseColor("#111111")
+        val labelColor = Color.parseColor("#9E9E9E")
 
-        val padH = (32 * s).toInt()
-        val padV = (24 * s).toInt()
-
-        val layout = LinearLayout(this).apply {
+        val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(padH, padV, padH, padV)
+            setPadding(dp(18f * s), dp(14f * s), dp(18f * s), dp(14f * s))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16f * s).toFloat()
+                setColor(Color.WHITE)
+                setStroke(dp(3f * s).coerceAtLeast(2), accent)
+            }
         }
 
-        val (bgColor, statusText) = when (res.status) {
-            ViabilityStatus.EXCELLENT -> Pair(Color.parseColor("#1B5E20"), "🟢 EXCELENTE")
-            ViabilityStatus.GOOD -> Pair(Color.parseColor("#2E7D32"), "🟢 BOA")
-            ViabilityStatus.REGULAR -> Pair(Color.parseColor("#F57F17"), "🟡 REGULAR")
-            ViabilityStatus.UNPROFITABLE -> Pair(Color.parseColor("#C62828"), "🔴 RECUSAR / PREJUÍZO")
+        // ── Linha de métricas: $/Km · $/Hora · Nota ─────────────────────────
+        val metrics = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        metrics.layoutParams = LinearLayout.LayoutParams(
+            (300 * density * s).toInt(),
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+
+        metrics.addView(metricColumn("$/Km", format2(res.grossPerKm), accent, textColor, labelColor, s))
+        metrics.addView(metricColumn("$/Hora", format2(res.grossHourlyRate), accent, textColor, labelColor, s))
+        metrics.addView(
+            metricColumn(
+                "Nota",
+                res.offer.passengerRating?.let { format2(it) } ?: "--",
+                accent, textColor, labelColor, s
+            )
+        )
+        root.addView(metrics)
+
+        // ── Rodapé: badge da plataforma + tempo · distância ─────────────────
+        val footer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        footer.layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = dp(10f * s) }
+
+        footer.addView(platformBadge(res.offer.platform.displayName, s))
+
+        val tokens = mutableListOf(formatDuration(res.offer.totalDurationMinutes), formatKm(res.offer.totalDistanceKm))
+        if (res.offer.pickupDistanceKm > 0.0) {
+            tokens.add("Busca ${formatKm(res.offer.pickupDistanceKm)} km")
+        }
+        val footerText = TextView(this).apply {
+            text = tokens.joinToString(" · ")
+            setTextColor(textColor)
+            textSize = 15f * s
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        footer.addView(footerText, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { leftMargin = dp(8f * s) })
+
+        root.addView(footer)
+
+        attachCardDrag(root, params, wm)
+        return root
+    }
+
+    /** Coluna de métrica: rótulo pequeno em cima e valor grande com barra colorida à esquerda. */
+    private fun metricColumn(
+        label: String,
+        value: String,
+        accent: Int,
+        textColor: Int,
+        labelColor: Int,
+        s: Float
+    ): View {
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
 
-        val bgDrawable = GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = 28f * s
-            setColor(bgColor)
-            setStroke((2 * s).toInt().coerceAtLeast(1), Color.parseColor("#80FFFFFF"))
+        val labelView = TextView(this).apply {
+            text = label
+            setTextColor(labelColor)
+            textSize = 12f * s
         }
-        layout.background = bgDrawable
 
-        // Cabeçalho (Status + Botão fechar)
-        val header = LinearLayout(this).apply {
+        val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
-        val titleView = TextView(this).apply {
-            text = "${res.offer.platform.displayName} • $statusText"
-            setTextColor(Color.WHITE)
-            textSize = 13f * s
-            typeface = Typeface.DEFAULT_BOLD
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        }
-
-        val closeSize = (60 * s).toInt()
-        val closeBtn = Button(this).apply {
-            text = "✕"
-            setTextColor(Color.WHITE)
-            textSize = 12f * s
-            setBackgroundColor(Color.TRANSPARENT)
-            setPadding(0, 0, 0, 0)
-            layoutParams = LinearLayout.LayoutParams(closeSize, closeSize)
-            setOnClickListener { removeCard() }
-        }
-
-        header.addView(titleView)
-        header.addView(closeBtn)
-        layout.addView(header)
-
-        val profitView = TextView(this).apply {
-            text = "Lucro Líquido: R$ %.2f".format(Locale.US, res.netProfit)
-            setTextColor(Color.WHITE)
-            textSize = 17f * s
-            typeface = Typeface.DEFAULT_BOLD
-        }
-        layout.addView(profitView)
-
-        val ratesView = TextView(this).apply {
-            text = "R$ %.2f/km  •  R$ %.1f/h".format(Locale.US, res.netPerKm, res.netHourlyRate)
-            setTextColor(Color.parseColor("#E0E0E0"))
-            textSize = 13f * s
-        }
-        layout.addView(ratesView)
-
-        val detailsView = TextView(this).apply {
-            text = "Total: %.1f km (Busca: %.1f km) • %.0f min".format(
-                Locale.US,
-                res.offer.totalDistanceKm,
-                res.offer.pickupDistanceKm,
-                res.offer.totalDurationMinutes
-            )
-            setTextColor(Color.parseColor("#CCCCCC"))
-            textSize = 11f * s
-        }
-        layout.addView(detailsView)
-
-        if (res.alerts.isNotEmpty()) {
-            val alertView = TextView(this).apply {
-                text = "⚠️ " + res.alerts.first()
-                setTextColor(Color.parseColor("#FFF59D"))
-                textSize = 11f * s
-                typeface = Typeface.DEFAULT_BOLD
+        val bar = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(dp(5f * s), dp(26f * s))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(3f * s).toFloat()
+                setColor(accent)
             }
-            layout.addView(alertView)
         }
 
-        // Arrastar o card
+        val valueView = TextView(this).apply {
+            text = value
+            setTextColor(textColor)
+            textSize = 22f * s
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { leftMargin = dp(6f * s) }
+        }
+
+        row.addView(bar)
+        row.addView(valueView)
+        column.addView(labelView)
+        column.addView(row)
+        return column
+    }
+
+    private fun platformBadge(name: String, s: Float): View {
+        return TextView(this).apply {
+            text = name.uppercase(localeBr)
+            setTextColor(Color.WHITE)
+            textSize = 11f * s
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            setPadding(dp(6f * s), dp(3f * s), dp(6f * s), dp(3f * s))
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(4f * s).toFloat()
+                setColor(Color.parseColor("#1A1A1A"))
+            }
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun attachCardDrag(
+        view: View,
+        params: WindowManager.LayoutParams,
+        wm: WindowManager
+    ) {
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
 
-        layout.setOnTouchListener { _, event ->
+        view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
@@ -368,15 +415,28 @@ class FloatingOverlayService : Service() {
                     params.x = initialX + (event.rawX - initialTouchX).toInt()
                     params.y = initialY + (event.rawY - initialTouchY).toInt()
                     try {
-                        wm.updateViewLayout(layout, params)
+                        wm.updateViewLayout(view, params)
                     } catch (_: Exception) {}
                     true
                 }
                 else -> false
             }
         }
+    }
 
-        return layout
+    private fun statusColor(status: ViabilityStatus): Int = when (status) {
+        ViabilityStatus.EXCELLENT -> Color.parseColor("#00C853")
+        ViabilityStatus.GOOD -> Color.parseColor("#43A047")
+        ViabilityStatus.REGULAR -> Color.parseColor("#F9A825")
+        ViabilityStatus.UNPROFITABLE -> Color.parseColor("#E53935")
+    }
+
+    private fun format2(value: Double): String = String.format(localeBr, "%.2f", value)
+    private fun formatKm(value: Double): String = String.format(localeBr, "%.1f", value)
+
+    private fun formatDuration(minutes: Double): String {
+        val total = minutes.toInt()
+        return "%dh%02dm".format(total / 60, total % 60)
     }
 
     // ── Remoção / ciclo de vida ──────────────────────────────────────────────
