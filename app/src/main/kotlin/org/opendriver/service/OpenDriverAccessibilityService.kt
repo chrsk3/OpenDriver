@@ -55,6 +55,19 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         super.onCreate()
         preferencesRepo = PreferencesRepository(this)
         eventsSeen = preferencesRepo.getReaderEventCount()
+        warmUpOcr()
+    }
+
+    /** Carrega o modelo de OCR já no start, para a 1ª oferta não esperar ~10s. */
+    private fun warmUpOcr() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        ioExecutor.execute {
+            try {
+                val bmp = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+                recognizer.process(InputImage.fromBitmap(bmp, 0))
+                    .addOnCompleteListener { bmp.recycle() }
+            } catch (_: Exception) {}
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -107,7 +120,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return // takeScreenshot é API 30+
 
         val now = System.currentTimeMillis()
-        if (now - lastOcrAt < 2500) return
+        if (now - lastOcrAt < 1000) return
         lastOcrAt = now
 
         try {

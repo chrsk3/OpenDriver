@@ -28,9 +28,18 @@ fun EarningsScreen(
     repo: PreferencesRepository,
     onBack: () -> Unit,
     onDetails: () -> Unit,
-    onEdit: () -> Unit
+    onEdit: () -> Unit,
+    onTestBubble: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scroll = rememberScrollState()
+
+    var hasOverlay by remember { mutableStateOf(android.provider.Settings.canDrawOverlays(context)) }
+    var hasAccessibility by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
+    LaunchedEffect(Unit) {
+        hasOverlay = android.provider.Settings.canDrawOverlays(context)
+        hasAccessibility = isAccessibilityServiceEnabled(context)
+    }
 
     var apps by remember { mutableStateOf(repo.getSelectedApps()) }
     var prefs by remember { mutableStateOf(repo.getDriverPreferences()) }
@@ -269,6 +278,82 @@ fun EarningsScreen(
                     checked = textNotif,
                     onCheckedChange = { textNotif = it; repo.setTextNotificationEnabled(it) }
                 )
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            // ── Permissões ──────────────────────────────────────────────────
+            SectionTitle("Permissões")
+            SectionCard {
+                PermissionRow(
+                    icon = Icons.Default.Layers,
+                    title = "Janela Flutuante",
+                    isGranted = hasOverlay,
+                    onGrant = {
+                        context.startActivity(
+                            android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                android.net.Uri.parse("package:${context.packageName}")
+                            )
+                        )
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                PermissionRow(
+                    icon = Icons.Default.Accessibility,
+                    title = "Serviço de Acessibilidade",
+                    isGranted = hasAccessibility,
+                    onGrant = { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                )
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            // ── Ações ───────────────────────────────────────────────────────
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onEdit,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, ACCENT),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = ACCENT)
+                ) {
+                    Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Editar", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+                Button(
+                    onClick = onDetails,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = ACCENT)
+                ) {
+                    Icon(Icons.Default.BarChart, null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Detalhes", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+            OutlinedButton(
+                onClick = onTestBubble,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, BORDER),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
+            ) {
+                Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Testar Bolha Agora", fontSize = 13.sp)
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            // ── Diagnóstico ─────────────────────────────────────────────────
+            SectionTitle("Diagnóstico do Leitor")
+            SectionCard {
+                Text("Eventos de corrida lidos: ${repo.getReaderEventCount()}", fontSize = 11.sp, color = ACCENT)
+                Spacer(Modifier.height(4.dp))
+                Text(repo.getLastCaptureInfo(), fontSize = 11.sp, color = TEXT_MUTED)
             }
 
             Spacer(Modifier.height(24.dp))

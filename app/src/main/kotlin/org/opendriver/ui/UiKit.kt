@@ -7,15 +7,20 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
+import android.view.accessibility.AccessibilityManager
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -222,6 +227,31 @@ fun StatBox(label: String, value: String, valueColor: Color = Color.White, modif
         Spacer(Modifier.height(4.dp))
         Text(value, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = valueColor)
     }
+}
+
+@Composable
+fun PermissionRow(icon: ImageVector, title: String, isGranted: Boolean, onGrant: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(CARD_INNER).padding(12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, null, tint = if (isGranted) ACCENT else TEXT_MUTED, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(title, fontSize = 13.sp, color = Color.White, modifier = Modifier.weight(1f))
+        if (isGranted) {
+            Icon(Icons.Default.CheckCircle, null, tint = ACCENT, modifier = Modifier.size(20.dp))
+        } else {
+            TextButton(onClick = onGrant, colors = ButtonDefaults.textButtonColors(contentColor = ACCENT)) {
+                Text("Ativar", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+fun isAccessibilityServiceEnabled(context: Context): Boolean {
+    val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+    val enabled = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+    return enabled.any { it.id.contains(context.packageName) }
 }
 
 @Composable

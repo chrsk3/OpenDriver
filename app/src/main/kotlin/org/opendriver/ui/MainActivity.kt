@@ -60,21 +60,18 @@ class MainActivity : ComponentActivity() {
                         Screen.HOME -> HomeScreen(
                             repo = repo,
                             onOpenCopilot = { screen = Screen.COPILOT },
-                            onOpenEarnings = { screen = Screen.EARNINGS },
-                            onEdit = { screen = Screen.EDIT },
-                            onDetails = { screen = Screen.DETAILS },
-                            onTestBubble = { simularCorrida() }
+                            onOpenEarnings = { screen = Screen.EARNINGS }
                         )
                         Screen.COPILOT -> CopilotScreen(
                             repo = repo,
-                            onBack = { screen = Screen.HOME },
-                            onTestBubble = { simularCorrida() }
+                            onBack = { screen = Screen.HOME }
                         )
                         Screen.EARNINGS -> EarningsScreen(
                             repo = repo,
                             onBack = { screen = Screen.HOME },
                             onDetails = { screen = Screen.DETAILS },
-                            onEdit = { screen = Screen.EDIT }
+                            onEdit = { screen = Screen.EDIT },
+                            onTestBubble = { simularCorrida() }
                         )
                         Screen.EDIT -> EditScreen(
                             repo = repo,
@@ -116,10 +113,7 @@ class MainActivity : ComponentActivity() {
 fun HomeScreen(
     repo: PreferencesRepository,
     onOpenCopilot: () -> Unit,
-    onOpenEarnings: () -> Unit,
-    onEdit: () -> Unit,
-    onDetails: () -> Unit,
-    onTestBubble: () -> Unit
+    onOpenEarnings: () -> Unit
 ) {
     val context = LocalContext.current
     val scroll = rememberScrollState()
@@ -163,49 +157,6 @@ fun HomeScreen(
             },
             onSettings = onOpenEarnings
         )
-
-        Spacer(Modifier.height(10.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            OutlinedButton(
-                onClick = onEdit,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, ACCENT),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = ACCENT)
-            ) {
-                Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Editar", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-            Button(
-                onClick = onDetails,
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(12.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = ACCENT)
-            ) {
-                Icon(Icons.Default.BarChart, null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Detalhes", color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-
-        OutlinedButton(
-            onClick = onTestBubble,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(12.dp),
-            border = androidx.compose.foundation.BorderStroke(1.dp, BORDER),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-        ) {
-            Icon(Icons.Default.PlayArrow, null, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(6.dp))
-            Text("Testar Bolha Agora", fontSize = 13.sp)
-        }
 
         Spacer(Modifier.height(24.dp))
 
