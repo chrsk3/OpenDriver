@@ -2,18 +2,41 @@ package org.opendriver.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import org.opendriver.core.model.BubbleSize
 import org.opendriver.core.model.DriverPreferences
 import org.opendriver.core.model.FuelType
 import org.opendriver.core.model.VehicleProfile
 
 /**
- * Repositório simples para carregar e salvar as preferências do motorista
- * e os custos do veículo localmente usando SharedPreferences.
+ * Repositório simples para carregar e salvar as preferências do motorista,
+ * configurações do copiloto e custos do veículo localmente usando SharedPreferences.
  */
 class PreferencesRepository(context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("opendriver_prefs", Context.MODE_PRIVATE)
+
+    // === Copiloto & Bolha Flutuante ===
+
+    fun getCopilotEnabled(): Boolean = prefs.getBoolean("copilot_enabled", true)
+    fun setCopilotEnabled(enabled: Boolean) = prefs.edit().putBoolean("copilot_enabled", enabled).apply()
+
+    fun getEarningsCalcEnabled(): Boolean = prefs.getBoolean("earnings_calc_enabled", true)
+    fun setEarningsCalcEnabled(enabled: Boolean) = prefs.edit().putBoolean("earnings_calc_enabled", enabled).apply()
+
+    fun getBubbleSize(): BubbleSize {
+        val name = prefs.getString("bubble_size", BubbleSize.MEDIO.name) ?: BubbleSize.MEDIO.name
+        return try { BubbleSize.valueOf(name) } catch (_: Exception) { BubbleSize.MEDIO }
+    }
+
+    fun setBubbleSize(size: BubbleSize) {
+        prefs.edit().putString("bubble_size", size.name).apply()
+    }
+
+    fun getBubbleOpacity(): Int = prefs.getInt("bubble_opacity", 90)
+    fun setBubbleOpacity(opacity: Int) = prefs.edit().putInt("bubble_opacity", opacity.coerceIn(10, 100)).apply()
+
+    // === Custos do Veículo ===
 
     fun getVehicleProfile(): VehicleProfile {
         val fuelTypeName = prefs.getString("fuel_type", FuelType.GASOLINE.name) ?: FuelType.GASOLINE.name
@@ -45,6 +68,8 @@ class PreferencesRepository(context: Context) {
             .putFloat("daily_km", profile.estimatedDailyKm.toFloat())
             .apply()
     }
+
+    // === Metas do Motorista ===
 
     fun getDriverPreferences(): DriverPreferences {
         return DriverPreferences(

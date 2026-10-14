@@ -37,6 +37,11 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
         if (!isTargetApp) return
 
+        // Verifica se o Copiloto e o Cálculo de Ganhos estão ativos
+        if (!preferencesRepo.getCopilotEnabled() || !preferencesRepo.getEarningsCalcEnabled()) {
+            return
+        }
+
         // Extrai todo o conteúdo visível da janela atual
         val rootNode = rootInActiveWindow ?: return
         val texts = mutableListOf<String>()

@@ -23,8 +23,10 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import org.opendriver.core.model.BubbleSize
 import org.opendriver.core.model.ViabilityResult
 import org.opendriver.core.model.ViabilityStatus
+import org.opendriver.data.PreferencesRepository
 import java.util.Locale
 
 /**
@@ -107,7 +109,19 @@ class FloatingOverlayService : Service() {
             y = 150
         }
 
+        val prefs = PreferencesRepository(this)
+        val bubbleSize = prefs.getBubbleSize()
+        val opacity = prefs.getBubbleOpacity()
+
         val view = createOverlayView(res, params, wm)
+
+        // Aplica escala conforme tamanho escolhido
+        view.scaleX = bubbleSize.scale
+        view.scaleY = bubbleSize.scale
+
+        // Aplica opacidade (10% a 100%)
+        view.alpha = opacity / 100f
+
         overlayView = view
 
         try {
