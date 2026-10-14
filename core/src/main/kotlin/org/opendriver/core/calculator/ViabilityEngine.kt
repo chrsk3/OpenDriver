@@ -68,7 +68,9 @@ object ViabilityEngine {
         // Determinação do status
         val status = when {
             netProfit <= 0 || netPerKm <= 0.20 -> ViabilityStatus.UNPROFITABLE
-            netPerKm >= preferences.minNetPerKm && netHourly >= preferences.minNetHourlyRate && offer.pickupDistanceKm <= preferences.maxPickupDistanceKm -> {
+            // A cor segue as metas configuradas de lucro/km e lucro/hora (busca longa
+            // continua apenas como alerta, sem reprovar a corrida sozinha).
+            netPerKm >= preferences.minNetPerKm && netHourly >= preferences.minNetHourlyRate -> {
                 if (grossPerKm >= preferences.minGrossPerKm * 1.30 || netHourly >= preferences.minNetHourlyRate * 1.30) {
                     ViabilityStatus.EXCELLENT
                 } else {

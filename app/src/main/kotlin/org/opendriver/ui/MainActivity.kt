@@ -410,6 +410,13 @@ fun EditCalculationScreen(
     var autonomiaText by remember { mutableStateOf(repo.getAutonomiaCarga().fmt2()) }
     var capacidadeText by remember { mutableStateOf(repo.getCapacidadeBateria().fmt2()) }
 
+    // Metas do semáforo (definem a cor do card)
+    val driverPrefs = remember { repo.getDriverPreferences() }
+    var minNetKmText by remember { mutableStateOf(driverPrefs.minNetPerKm.fmt2()) }
+    var minNetHoraText by remember { mutableStateOf(driverPrefs.minNetHourlyRate.fmt2()) }
+    var minGrossKmText by remember { mutableStateOf(driverPrefs.minGrossPerKm.fmt2()) }
+    var minNotaText by remember { mutableStateOf(driverPrefs.minPassengerRating.fmt2()) }
+
     val isElectric = fuelType == FuelType.ELECTRIC
     val scroll = rememberScrollState()
 
@@ -456,6 +463,16 @@ fun EditCalculationScreen(
                 depreciationCostPerKm = pDep,
                 estimatedDailyKm = km,
                 dailyFixedCost = custoFixoMes / diasMes
+            )
+        )
+
+        // Metas do semáforo: definem a cor do card (verde/amarelo/vermelho).
+        repo.saveDriverPreferences(
+            driverPrefs.copy(
+                minNetPerKm = minNetKmText.toDoubleSafe(driverPrefs.minNetPerKm),
+                minNetHourlyRate = minNetHoraText.toDoubleSafe(driverPrefs.minNetHourlyRate),
+                minGrossPerKm = minGrossKmText.toDoubleSafe(driverPrefs.minGrossPerKm),
+                minPassengerRating = minNotaText.toDoubleSafe(driverPrefs.minPassengerRating)
             )
         )
     }
@@ -555,6 +572,25 @@ fun EditCalculationScreen(
                 NumberField(impostosText, { impostosText = it }, "Impostos / IPVA por ano (R$)")
                 Spacer(Modifier.height(12.dp))
                 SummaryStrip("Custo fixo mensal", custoFixoMes.brl(), Color(0xFF40C4FF))
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            // ── Metas do semáforo (cor do card) ─────────────────────────────
+            SectionTitle("Metas do Semáforo")
+            SectionCard {
+                Text(
+                    "Definem a cor do card: 🟢 ao atingir, 🟡 perto, 🔴 abaixo.",
+                    fontSize = 11.sp, color = Color.Gray
+                )
+                Spacer(Modifier.height(10.dp))
+                NumberField(minNetKmText, { minNetKmText = it }, "Lucro líquido mínimo por km (🟢)")
+                Spacer(Modifier.height(8.dp))
+                NumberField(minNetHoraText, { minNetHoraText = it }, "Lucro líquido mínimo por hora (🟢)")
+                Spacer(Modifier.height(8.dp))
+                NumberField(minGrossKmText, { minGrossKmText = it }, "Ganho bruto mínimo por km (🟢)")
+                Spacer(Modifier.height(8.dp))
+                NumberField(minNotaText, { minNotaText = it }, "Nota mínima do passageiro")
             }
 
             Spacer(Modifier.height(18.dp))

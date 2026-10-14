@@ -28,7 +28,9 @@ import org.opendriver.core.model.ViabilityResult
 import org.opendriver.core.model.ViabilityStatus
 import org.opendriver.data.PreferencesRepository
 import java.io.File
+import java.io.FileOutputStream
 import java.util.Locale
+import java.util.concurrent.Executors
 import kotlin.math.abs
 
 /**
@@ -456,13 +458,7 @@ class FloatingOverlayService : Service() {
 
     private fun logLine(msg: String) {
         Log.i("OpenDriver", "[overlay] $msg")
-        try {
-            val dir = getExternalMediaDirs()?.firstOrNull() ?: return
-            val file = File(dir, "overlay_log.txt")
-            val merged = (if (file.exists()) file.readText() else "") +
-                "${System.currentTimeMillis()} $msg\n"
-            file.writeText(if (merged.length > 20000) merged.takeLast(20000) else merged)
-        } catch (_: Exception) {}
+        logToFile(this, msg)
     }
 
     private fun removeCard() {
@@ -537,14 +533,22 @@ class FloatingOverlayService : Service() {
             }
         }
 
+        private val logExecutor = Executors.newSingleThreadExecutor()
+
+        // Escreve em background: nunca bloquear a main thread (mesma do overlay).
         private fun logToFile(context: Context, msg: String) {
-            try {
-                val dir = context.getExternalMediaDirs()?.firstOrNull() ?: return
-                val file = File(dir, "overlay_log.txt")
-                val merged = (if (file.exists()) file.readText() else "") +
-                    "${System.currentTimeMillis()} $msg\n"
-                file.writeText(if (merged.length > 20000) merged.takeLast(20000) else merged)
-            } catch (_: Exception) {}
+            logExecutor.execute {
+                try {
+                    val dir = context.getExternalMediaDirs()?.firstOrNull() ?: return@execute
+                    val file = File(dir, "overlay_log.txt")
+                    if (file.exists() && file.length() > 30_000) {
+                        file.writeText(file.readText().takeLast(15_000))
+                    }
+                    FileOutputStream(file, true).use {
+                        it.write("${System.currentTimeMillis()} $msg\n".toByteArray())
+                    }
+                } catch (_: Exception) {}
+            }
         }
 
         fun hide(context: Context) {

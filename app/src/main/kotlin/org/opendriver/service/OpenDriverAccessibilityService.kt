@@ -16,9 +16,11 @@ import org.opendriver.core.model.RideOffer
 import org.opendriver.data.PreferencesRepository
 import org.opendriver.parser.RideTextParser
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /**
  * Serviço de acessibilidade que captura ofertas de corrida da Uber/99.
@@ -28,10 +30,18 @@ import java.util.Locale
  * tiramos um screenshot via [AccessibilityService.takeScreenshot] e rodamos OCR
  * (ML Kit) para extrair valor/distância/tempo — mesma técnica usada por apps
  * concorrentes.
+ *
+ * IMPORTANTE: todo I/O de arquivo e o processamento de OCR rodam fora da main
+ * thread — este serviço compartilha a thread principal com o overlay; bloquear
+ * a UI fazia o botão flutuante travar ao arrastar e o card demorar a sumir.
  */
 class OpenDriverAccessibilityService : AccessibilityService() {
 
     private lateinit var preferencesRepo: PreferencesRepository
+
+    // Trabalho pesado (I/O de log e listeners do OCR) fora da main thread.
+    private val ioExecutor = Executors.newSingleThreadExecutor()
+
     private var lastOfferKey: String = ""
     private var lastOfferTimestamp: Long = 0
     private var eventsSeen: Int = 0
@@ -130,7 +140,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     private fun runOcr(packageName: String, bitmap: Bitmap) {
         val image = InputImage.fromBitmap(bitmap, 0)
         recognizer.process(image)
-            .addOnSuccessListener { vision ->
+            .addOnSuccessListener(ioExecutor) { vision ->
                 val lines = mutableListOf<String>()
                 for (block in vision.textBlocks) {
                     for (line in block.lines) {
@@ -143,13 +153,12 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 appendCaptureLog("ocr", packageName, -1, lines)
 
                 // A tela de oferta real sempre tem botão de aceite; home/oportunidades não.
-                // Exigir esse sinal elimina cards de corridas que não existiram.
                 if (hasAcceptSignal(lines)) {
                     val offer = RideTextParser.parse(packageName, lines)
                     if (offer != null) publishOffer(offer, packageName)
                 }
             }
-            .addOnFailureListener { e ->
+            .addOnFailureListener(ioExecutor) { e ->
                 bitmap.recycle()
                 Log.w(TAG, "OCR falhou: ${e.message}")
             }
@@ -230,34 +239,47 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     private fun mediaDir(): File? = getExternalMediaDirs()?.firstOrNull() ?: getExternalFilesDir(null)
 
-    private fun appendLogLine(content: String) {
-        try {
-            val dir = mediaDir() ?: return
-            val file = File(dir, "capture_log.txt")
-            val merged = (if (file.exists()) file.readText() else "") + content + "\n"
-            file.writeText(if (merged.length > 160000) merged.takeLast(160000) else merged)
-        } catch (e: Exception) {
-            Log.w(TAG, "Falha ao gravar log: ${e.message}")
-        }
-    }
-
     private fun appendCaptureLog(source: String, packageName: String, eventType: Int, texts: Collection<String>) {
         val now = System.currentTimeMillis()
         if (now - lastLogAt < 500) return
         lastLogAt = now
         val stamp = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date(now))
-        val entry = "---- $stamp • $source • pkg=$packageName • ev=$eventType • n=${texts.size}\n" +
-            texts.joinToString(" | ").take(1500)
-        appendLogLine(entry)
+        appendLogLine(
+            "---- $stamp • $source • pkg=$packageName • ev=$eventType • n=${texts.size}\n" +
+                texts.joinToString(" | ").take(1500)
+        )
+    }
+
+    /** Append em background (nunca na main thread) com poda do arquivo. */
+    private fun appendLogLine(content: String) {
+        ioExecutor.execute {
+            try {
+                val dir = mediaDir() ?: return@execute
+                val file = File(dir, "capture_log.txt")
+                if (file.exists() && file.length() > 200_000) {
+                    file.writeText(file.readText().takeLast(100_000))
+                }
+                FileOutputStream(file, true).use { it.write((content + "\n").toByteArray()) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha ao gravar log: ${e.message}")
+            }
+        }
     }
 
     private fun persistRelevantCapture(info: String) {
         preferencesRepo.setLastCaptureInfo(info)
-        try {
-            mediaDir()?.let { File(it, "last_capture.txt").writeText(info) }
-        } catch (e: Exception) {
-            Log.w(TAG, "Falha ao gravar captura: ${e.message}")
+        ioExecutor.execute {
+            try {
+                mediaDir()?.let { File(it, "last_capture.txt").writeText(info) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha ao gravar captura: ${e.message}")
+            }
         }
+    }
+
+    override fun onDestroy() {
+        ioExecutor.shutdown()
+        super.onDestroy()
     }
 
     override fun onInterrupt() {}
@@ -268,6 +290,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
         private val DISTANCE_REGEX = Regex("[0-9]+(?:[.,][0-9]+)?" + SP + "*km", RegexOption.IGNORE_CASE)
         private val DURATION_REGEX = Regex("[0-9]+" + SP + "*min", RegexOption.IGNORE_CASE)
+
         // Uber: "Aceitar" só em corrida exclusiva; no radar a maioria mostra "Selecionar".
         // 99/inDrive usam "Aceitar". Cobrimos todas as variantes do botão de aceite.
         private val ACCEPT_REGEX = Regex(
