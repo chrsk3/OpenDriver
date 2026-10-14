@@ -14,7 +14,10 @@ object RideTextParser {
     private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
     private val DISTANCE_REGEX = Regex("([0-9]+(?:[.,][0-9]+)?)" + SP + "*km", RegexOption.IGNORE_CASE)
     private val DURATION_REGEX = Regex("([0-9]+)" + SP + "*min", RegexOption.IGNORE_CASE)
-    private val RATING_REGEX = Regex("(?:★" + SP + "*([3-5][.,][0-9]{1,2})|([3-5][.,][0-9]{1,2})" + SP + "*★)")
+    // OCR lê a estrela como "*"; aceita também o formato "4,95 (66)" (nota + nº de corridas).
+    private val RATING_REGEX = Regex(
+        "([3-5][.,][0-9]{1,2})" + SP + "*\\([0-9]+\\)|[★*]" + SP + "*([3-5][.,][0-9]{1,2})"
+    )
 
     /**
      * Analisa uma lista de textos coletados da tela do app e tenta montar uma RideOffer válida.

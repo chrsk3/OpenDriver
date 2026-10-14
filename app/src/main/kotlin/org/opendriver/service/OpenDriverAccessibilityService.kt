@@ -80,7 +80,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
         if (texts.isNotEmpty()) {
             appendCaptureLog("tree", packageName, event.eventType, texts)
-            if (looksLikeOffer(texts)) {
+            if (looksLikeOffer(texts) && hasAcceptSignal(texts)) {
                 RideTextParser.parse(packageName, texts.toList())?.let { offer ->
                     if (publishOffer(offer, packageName)) return
                 }
@@ -142,8 +142,12 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
                 appendCaptureLog("ocr", packageName, -1, lines)
 
-                val offer = RideTextParser.parse(packageName, lines)
-                if (offer != null) publishOffer(offer, packageName)
+                // A tela de oferta real sempre tem botão de aceite; home/oportunidades não.
+                // Exigir esse sinal elimina cards de corridas que não existiram.
+                if (hasAcceptSignal(lines)) {
+                    val offer = RideTextParser.parse(packageName, lines)
+                    if (offer != null) publishOffer(offer, packageName)
+                }
             }
             .addOnFailureListener { e ->
                 bitmap.recycle()
@@ -193,6 +197,9 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 packageName.contains("taxis99", ignoreCase = true) ||
                 packageName.contains("didiglobal", ignoreCase = true) ||
                 packageName.contains("indrive", ignoreCase = true)
+
+    private fun hasAcceptSignal(texts: Collection<String>): Boolean =
+        texts.any { ACCEPT_REGEX.containsMatchIn(it) }
 
     private fun looksLikeOffer(texts: Collection<String>): Boolean {
         var maxFare = 0.0
@@ -261,5 +268,6 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
         private val DISTANCE_REGEX = Regex("[0-9]+(?:[.,][0-9]+)?" + SP + "*km", RegexOption.IGNORE_CASE)
         private val DURATION_REGEX = Regex("[0-9]+" + SP + "*min", RegexOption.IGNORE_CASE)
+        private val ACCEPT_REGEX = Regex("Aceitar|Recusar|Nova viagem|Nova corrida", RegexOption.IGNORE_CASE)
     }
 }

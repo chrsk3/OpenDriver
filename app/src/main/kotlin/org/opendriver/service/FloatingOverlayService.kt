@@ -254,9 +254,10 @@ class FloatingOverlayService : Service() {
             return
         }
 
+        val durationMs = PreferencesRepository(this).getCardDurationSeconds().coerceIn(2, 60) * 1000L
         autoDismissRunnable?.let { handler.removeCallbacks(it) }
         autoDismissRunnable = Runnable { removeCard() }
-        handler.postDelayed(autoDismissRunnable!!, 25000)
+        handler.postDelayed(autoDismissRunnable!!, durationMs)
     }
 
     @SuppressLint("ClickableViewAccessibility")

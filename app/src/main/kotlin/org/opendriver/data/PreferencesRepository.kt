@@ -37,6 +37,11 @@ class PreferencesRepository(context: Context) {
         .putInt("floating_button_opacity", opacity.coerceIn(10, 100))
         .apply()
 
+    /** Por quantos segundos o card de resultado fica na tela antes de sumir (padrão 8s). */
+    fun getCardDurationSeconds(): Int = prefs.getInt("card_duration_seconds", 8)
+    fun setCardDurationSeconds(seconds: Int) =
+        prefs.edit().putInt("card_duration_seconds", seconds.coerceIn(2, 60)).apply()
+
     // === Diagnóstico do leitor de corridas (acessibilidade) ===
 
     fun getLastCaptureInfo(): String =

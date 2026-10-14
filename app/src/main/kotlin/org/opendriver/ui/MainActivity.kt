@@ -1134,6 +1134,38 @@ fun CopilotSettingsDialog(
                     }
                 }
 
+                Spacer(Modifier.height(10.dp))
+
+                // Tempo em que o card fica visível
+                var cardSeconds by remember { mutableStateOf(repo.getCardDurationSeconds().toString()) }
+                Card(colors = CardDefaults.cardColors(containerColor = CARD_INNER), shape = RoundedCornerShape(12.dp)) {
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Timer, null, tint = ACCENT, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text("Tempo do Card", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Text("Quanto tempo o resultado fica na tela", fontSize = 11.sp, color = Color.Gray)
+                            }
+                            Text("${cardSeconds}s", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ACCENT)
+                        }
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = cardSeconds,
+                            onValueChange = { novo ->
+                                val digits = novo.filter { it.isDigit() }.take(2)
+                                cardSeconds = digits
+                                digits.toIntOrNull()?.let { repo.setCardDurationSeconds(it) }
+                            },
+                            label = { Text("Segundos (2–60)", fontSize = 12.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = fieldColors()
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(16.dp))
 
                 // Diagnóstico do leitor (última captura de corrida)
