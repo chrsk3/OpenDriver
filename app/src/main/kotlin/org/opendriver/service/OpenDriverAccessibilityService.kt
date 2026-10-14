@@ -150,8 +150,21 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         }
     }
 
-    private fun runOcr(packageName: String, bitmap: Bitmap) {
-        val image = InputImage.fromBitmap(bitmap, 0)
+    private fun runOcr(packageName: String, raw: Bitmap) {
+        // O screenshot vem como hardware bitmap: converte para software para poder recortar.
+        val software = if (raw.config == Bitmap.Config.HARDWARE) {
+            val copy = raw.copy(Bitmap.Config.ARGB_8888, false)
+            raw.recycle()
+            copy
+        } else raw
+        if (software == null) return
+
+        // Recorta a região onde a oferta aparece (parte de baixo) e reduz a resolução:
+        // menos pixels = OCR bem mais rápido (a oferta da Uber fica embaixo).
+        val cropped = cropOfferRegion(software)
+        if (cropped !== software) software.recycle()
+
+        val image = InputImage.fromBitmap(cropped, 0)
         recognizer.process(image)
             .addOnSuccessListener(ioExecutor) { vision ->
                 val lines = mutableListOf<String>()
@@ -161,7 +174,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                         if (t.isNotEmpty()) lines.add(t)
                     }
                 }
-                bitmap.recycle()
+                cropped.recycle()
 
                 appendCaptureLog("ocr", packageName, -1, lines)
 
@@ -172,9 +185,36 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 }
             }
             .addOnFailureListener(ioExecutor) { e ->
-                bitmap.recycle()
+                cropped.recycle()
                 Log.w(TAG, "OCR falhou: ${e.message}")
             }
+    }
+
+    /**
+     * Recorta a faixa inferior da tela (onde fica o card da oferta) e reduz a largura,
+     * acelerando o OCR. Cai para a imagem inteira se o recorte falhar.
+     */
+    private fun cropOfferRegion(src: Bitmap): Bitmap {
+        val w = src.width
+        val h = src.height
+        if (w <= 0 || h <= 0) return src
+
+        val top = (h * OFFER_TOP_FRACTION).toInt().coerceIn(0, h - 1)
+        val region = try {
+            Bitmap.createBitmap(src, 0, top, w, h - top)
+        } catch (_: Exception) {
+            src
+        }
+
+        if (region.width <= OCR_MAX_WIDTH) return region
+        val newH = (region.height * (OCR_MAX_WIDTH.toFloat() / region.width)).toInt().coerceAtLeast(1)
+        val scaled = try {
+            Bitmap.createScaledBitmap(region, OCR_MAX_WIDTH, newH, true)
+        } catch (_: Exception) {
+            region
+        }
+        if (scaled !== region) region.recycle()
+        return scaled
     }
 
     // ── Publicação do resultado ──────────────────────────────────────────────
@@ -315,6 +355,9 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "OpenDriver"
+        // OCR mais rápido: usa só a faixa inferior da tela e reduz a largura.
+        private const val OFFER_TOP_FRACTION = 0.30f // descarta os 30% de cima
+        private const val OCR_MAX_WIDTH = 900
         private const val SP = "[\\s\\u00A0\\u202F]"
         private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
         private val DISTANCE_REGEX = Regex("[0-9]+(?:[.,][0-9]+)?" + SP + "*km", RegexOption.IGNORE_CASE)
