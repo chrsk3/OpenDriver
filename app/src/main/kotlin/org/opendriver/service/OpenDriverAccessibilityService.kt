@@ -20,6 +20,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     private var lastOfferTimestamp: Long = 0
     private var eventsSeen: Int = 0
     private var lastCounterPersist: Long = 0
+    private var lastRawAt: Long = 0
 
     override fun onCreate() {
         super.onCreate()
@@ -64,6 +65,8 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         }
 
         if (texts.isEmpty()) return
+
+        persistRawEvent(packageName, event, texts)
 
         // Ignora ruído (Recentes, barra de notificações, etc.): só registra/analisa
         // capturas que pareçam conter uma oferta (valor em R$, km ou min).
@@ -124,13 +127,26 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     private fun persistRelevantCapture(info: String) {
         preferencesRepo.setLastCaptureInfo(info)
-        // Espelha a captura completa num arquivo compartilhável para depuração.
+        writeCaptureFile("last_capture.txt", info)
+    }
+
+    /** Grava a captura bruta do evento atual (mesmo sem cara de oferta), para diagnóstico. */
+    private fun persistRawEvent(packageName: String, event: AccessibilityEvent, texts: Collection<String>) {
+        val now = System.currentTimeMillis()
+        if (now - lastRawAt < 1000) return
+        lastRawAt = now
+        val content = "pkg=$packageName • evento=${event.eventType}\n[" +
+            texts.joinToString(" | ").take(2000) + "]"
+        writeCaptureFile("last_event.txt", content)
+    }
+
+    private fun writeCaptureFile(name: String, content: String) {
+        // Android/media/<pkg> é acessível pelo gerenciador de arquivos e legível de fora do app.
         try {
-            getExternalFilesDir(null)?.let { dir ->
-                File(dir, "last_capture.txt").writeText(info)
-            }
+            val dir = getExternalMediaDirs()?.firstOrNull() ?: getExternalFilesDir(null)
+            dir?.let { File(it, name).writeText(content) }
         } catch (e: Exception) {
-            Log.w(TAG, "Falha ao gravar arquivo de captura: ${e.message}")
+            Log.w(TAG, "Falha ao gravar $name: ${e.message}")
         }
     }
 

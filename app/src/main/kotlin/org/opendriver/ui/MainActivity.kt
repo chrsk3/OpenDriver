@@ -182,6 +182,8 @@ fun MainScreen(
             onToggle = {
                 copilotEnabled = it
                 repo.setCopilotEnabled(it)
+                // Copiloto é o switch mestre: desligar encerra a leitura e remove o botão flutuante.
+                if (!it) FloatingOverlayService.hide(context)
             },
             onSettings = { showCopilotSettings = true }
         )
@@ -1151,7 +1153,7 @@ fun CopilotSettingsDialog(
                         )
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            "Captura completa em Android/data/org.opendriver/files/last_capture.txt",
+                            "Captura completa em Android/media/org.opendriver/last_capture.txt",
                             fontSize = 10.sp,
                             color = Color(0xFF607D8B)
                         )
