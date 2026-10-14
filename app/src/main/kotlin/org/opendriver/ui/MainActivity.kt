@@ -1010,7 +1010,7 @@ fun CopilotSettingsDialog(
 ) {
     val context = LocalContext.current
     var bubbleSize by remember { mutableStateOf(repo.getBubbleSize()) }
-    var opacity by remember { mutableIntStateOf(repo.getBubbleOpacity()) }
+    var opacity by remember { mutableIntStateOf(repo.getFloatingButtonOpacity()) }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
@@ -1058,7 +1058,7 @@ fun CopilotSettingsDialog(
                     Spacer(Modifier.width(8.dp))
                     Text("Botão Flutuante", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
-                Text("Ajuste o tamanho e a transparência", fontSize = 11.sp, color = Color.Gray)
+                Text("Tamanho do card e opacidade do botão", fontSize = 11.sp, color = Color.Gray)
                 Spacer(Modifier.height(14.dp))
 
                 Card(colors = CardDefaults.cardColors(containerColor = CARD_INNER), shape = RoundedCornerShape(12.dp)) {
@@ -1067,8 +1067,8 @@ fun CopilotSettingsDialog(
                             Icon(Icons.Default.ZoomOutMap, null, tint = ACCENT, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
-                                Text("Tamanho", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-                                Text("Escolha entre pequeno, médio ou grande", fontSize = 11.sp, color = Color.Gray)
+                                Text("Tamanho do Card", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+                                Text("Escala borda, texto e espaçamento do resultado", fontSize = 11.sp, color = Color.Gray)
                             }
                             Text(bubbleSize.displayName, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ACCENT)
                         }
@@ -1103,7 +1103,7 @@ fun CopilotSettingsDialog(
                         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Opacity, null, tint = ACCENT, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
-                            Text("Opacidade", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.weight(1f))
+                            Text("Opacidade do Botão", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White, modifier = Modifier.weight(1f))
                             Text("$opacity%", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = ACCENT)
                         }
                         Spacer(Modifier.height(8.dp))
@@ -1113,7 +1113,7 @@ fun CopilotSettingsDialog(
                                 value = opacity.toFloat(),
                                 onValueChange = {
                                     opacity = it.toInt()
-                                    repo.setBubbleOpacity(opacity)
+                                    repo.setFloatingButtonOpacity(opacity)
                                 },
                                 valueRange = 10f..100f,
                                 steps = 8,

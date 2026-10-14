@@ -29,8 +29,13 @@ class PreferencesRepository(context: Context) {
     }
     fun setBubbleSize(size: BubbleSize) = prefs.edit().putString("bubble_size", size.name).apply()
 
-    fun getBubbleOpacity(): Int = prefs.getInt("bubble_opacity", 90)
-    fun setBubbleOpacity(opacity: Int) = prefs.edit().putInt("bubble_opacity", opacity.coerceIn(10, 100)).apply()
+    /** Opacidade (10–100) do botão flutuante que abre/fecha o card de resultado. */
+    fun getFloatingButtonOpacity(): Int =
+        prefs.getInt("floating_button_opacity", prefs.getInt("bubble_opacity", 90))
+
+    fun setFloatingButtonOpacity(opacity: Int) = prefs.edit()
+        .putInt("floating_button_opacity", opacity.coerceIn(10, 100))
+        .apply()
 
     // === Aplicativos selecionados ===
 
