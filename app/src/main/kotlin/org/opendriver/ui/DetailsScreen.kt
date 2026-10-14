@@ -13,7 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import android.widget.Toast
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -21,6 +23,7 @@ import org.opendriver.data.PreferencesRepository
 
 @Composable
 fun DetailsScreen(repo: PreferencesRepository, onBack: () -> Unit, onEdit: () -> Unit) {
+    val context = LocalContext.current
     val scroll = rememberScrollState()
     val profile = remember { repo.getVehicleProfile() }
     val dias = repo.getDiasPorSemana().coerceAtLeast(1)
@@ -114,19 +117,27 @@ fun DetailsScreen(repo: PreferencesRepository, onBack: () -> Unit, onEdit: () ->
                     value = sim,
                     onValueChange = { sim = it },
                     valueRange = 0f..50f,
-                    steps = 9,
+                    steps = 49,
                     colors = SliderDefaults.colors(thumbColor = ACCENT, activeTrackColor = ACCENT, inactiveTrackColor = Color(0xFF333333))
                 )
                 Button(
                     onClick = {
                         val fator = 1.0 + (sim / 100.0)
+                        val lucroPeriod = ganhoPeriod - custoTotal
+                        val netKm = if (kmPeriod > 0) lucroPeriod / kmPeriod else 0.0
+                        val netHora = if (horasPeriod > 0) lucroPeriod / horasPeriod else 0.0
                         val p = repo.getDriverPreferences()
                         repo.saveDriverPreferences(
                             p.copy(
-                                minNetPerKm = (ganhoKm * fator).coerceAtLeast(0.01),
-                                minNetHourlyRate = (ganhoHora * fator).coerceAtLeast(0.01)
+                                minNetPerKm = (netKm * fator).coerceAtLeast(0.01),
+                                minNetHourlyRate = (netHora * fator).coerceAtLeast(0.01)
                             )
                         )
+                        Toast.makeText(
+                            context,
+                            "Semáforo atualizado: R$ ${"%.2f".format(netKm * fator)}/km e R$ ${"%.2f".format(netHora * fator)}/h",
+                            Toast.LENGTH_LONG
+                        ).show()
                     },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),

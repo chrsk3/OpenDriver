@@ -334,7 +334,7 @@ class FloatingOverlayService : Service() {
 
         footer.addView(platformBadge(res.offer.platform.displayName, s, fs))
 
-        val tokens = mutableListOf(formatDuration(res.offer.totalDurationMinutes), formatKm(res.offer.totalDistanceKm))
+        val tokens = mutableListOf(formatDuration(res.offer.totalDurationMinutes), "${formatKm(res.offer.totalDistanceKm)} km")
         if (res.offer.pickupDistanceKm > 0.0) {
             tokens.add("Busca ${formatKm(res.offer.pickupDistanceKm)} km")
         }

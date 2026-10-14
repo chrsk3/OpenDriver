@@ -9,7 +9,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Context
+import android.provider.Settings
 import android.view.accessibility.AccessibilityManager
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
@@ -252,6 +262,27 @@ fun isAccessibilityServiceEnabled(context: Context): Boolean {
     val am = context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
     val enabled = am.getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
     return enabled.any { it.id.contains(context.packageName) }
+}
+
+/** (janela flutuante, acessibilidade) — re-checa ao voltar pra tela (ON_RESUME). */
+@Composable
+fun rememberPermissionsState(): Pair<Boolean, Boolean> {
+    val context = LocalContext.current
+    val owner = LocalLifecycleOwner.current
+    var overlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    var accessibility by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
+
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                overlay = Settings.canDrawOverlays(context)
+                accessibility = isAccessibilityServiceEnabled(context)
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
+    return overlay to accessibility
 }
 
 @Composable

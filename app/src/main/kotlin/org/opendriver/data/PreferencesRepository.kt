@@ -19,10 +19,10 @@ class PreferencesRepository(context: Context) {
 
     // === Copiloto & Bolha Flutuante ===
 
-    fun getCopilotEnabled(): Boolean = prefs.getBoolean("copilot_enabled", true)
+    fun getCopilotEnabled(): Boolean = prefs.getBoolean("copilot_enabled", false)
     fun setCopilotEnabled(enabled: Boolean) = prefs.edit().putBoolean("copilot_enabled", enabled).apply()
 
-    fun getEarningsCalcEnabled(): Boolean = prefs.getBoolean("earnings_calc_enabled", true)
+    fun getEarningsCalcEnabled(): Boolean = prefs.getBoolean("earnings_calc_enabled", false)
     fun setEarningsCalcEnabled(enabled: Boolean) = prefs.edit().putBoolean("earnings_calc_enabled", enabled).apply()
 
     /** Tamanho do CARD de resultado. */

@@ -34,13 +34,7 @@ fun EarningsScreen(
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val scroll = rememberScrollState()
-
-    var hasOverlay by remember { mutableStateOf(android.provider.Settings.canDrawOverlays(context)) }
-    var hasAccessibility by remember { mutableStateOf(isAccessibilityServiceEnabled(context)) }
-    LaunchedEffect(Unit) {
-        hasOverlay = android.provider.Settings.canDrawOverlays(context)
-        hasAccessibility = isAccessibilityServiceEnabled(context)
-    }
+    val (hasOverlay, hasAccessibility) = rememberPermissionsState()
 
     var apps by remember { mutableStateOf(repo.getSelectedApps()) }
     var prefs by remember { mutableStateOf(repo.getDriverPreferences()) }

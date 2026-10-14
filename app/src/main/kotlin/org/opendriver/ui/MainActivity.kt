@@ -130,6 +130,48 @@ fun HomeScreen(
         if (copilotEnabled) FloatingOverlayService.enable(context) else FloatingOverlayService.hide(context)
     }
 
+    // Checagem de permissões ao iniciar: se faltar alguma, mostra a janela de ativação.
+    val (hasOverlay, hasAccessibility) = rememberPermissionsState()
+    var permDialogDismissed by remember { mutableStateOf(false) }
+    if ((!hasOverlay || !hasAccessibility) && !permDialogDismissed) {
+        AlertDialog(
+            onDismissRequest = { permDialogDismissed = true },
+            containerColor = CARD,
+            title = { Text("Permissões necessárias", color = Color.White, fontWeight = FontWeight.Bold) },
+            text = {
+                Column {
+                    Text(
+                        "Ative as duas permissões para o Copiloto ler as corridas:",
+                        color = TEXT_MUTED, fontSize = 13.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    PermissionRow(
+                        icon = Icons.Default.Layers,
+                        title = "Janela Flutuante",
+                        isGranted = hasOverlay,
+                        onGrant = {
+                            context.startActivity(
+                                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}"))
+                            )
+                        }
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    PermissionRow(
+                        icon = Icons.Default.Accessibility,
+                        title = "Serviço de Acessibilidade",
+                        isGranted = hasAccessibility,
+                        onGrant = { context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { permDialogDismissed = true }) {
+                    Text("Depois", color = TEXT_MUTED, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize().verticalScroll(scroll)) {
         AppHeader()
 
