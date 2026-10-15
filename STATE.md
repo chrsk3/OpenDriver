@@ -14,6 +14,7 @@
 3. **Notificação rica + botões Maps + anti-dismiss:** `RideOfferNotificationHelper` com layout `notification_ride_offer.xml` (RemoteViews), canal de alta prioridade, `autoCancel(false)` e intents do Google Maps para Embarque e Destino.
 4. **Card flutuante com posições ancoradas e auto-dismiss:** Ancoragem em 3 posições (`CENTER`, `LEFT`, `RIGHT`) via `CardPosition`, default no Centro com `x = 0`, duração configurável (padrão 10s) e timer com descarte manual ao clicar e pausa em arraste.
 5. **Histórico em SQLite via Room:** `RideEntity`, `RideDao` e `AppDatabase` (androidx.room) substituindo `ride_history.csv`, com migração única automática dos dados legados, schema detalhado de métricas e suporte na `HistoryScreen`.
+6. **Suporte à 99 (app do motorista):** Detecção de pacotes oficiais (`com.app99.driver`, `com.app99.radar.driver`, `com.app99.food.driver`, `com.didiglobal.driver`, `com.taxis99`), parsing de categorias (99Pop, 99Comfort, 99Moto, 99Negocia, etc.), notas no formato 99 (`4.8 ★`), duração com horas (`1 h 15 min`) e extração de endereços de embarque/destino integrada aos botões do Google Maps e persistência no Room.
 
 ---
 

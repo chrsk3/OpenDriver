@@ -285,7 +285,8 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         val selected = preferencesRepo.getSelectedApps()
         return when {
             packageName.contains("uber", ignoreCase = true) -> "Uber" in selected
-            packageName.contains("taxis99", ignoreCase = true) ||
+            packageName.contains("app99", ignoreCase = true) ||
+                packageName.contains("taxis99", ignoreCase = true) ||
                 packageName.contains("didiglobal", ignoreCase = true) -> "99" in selected
             packageName.contains("indrive", ignoreCase = true) -> "InDrive" in selected
             else -> false
@@ -381,9 +382,9 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         private val DURATION_REGEX = Regex("[0-9]+" + SP + "*min", RegexOption.IGNORE_CASE)
 
         // Uber: "Aceitar" só em corrida exclusiva; no radar a maioria mostra "Selecionar".
-        // 99/inDrive usam "Aceitar". Cobrimos todas as variantes do botão de aceite.
+        // 99/inDrive usam "Aceitar". Cobrimos todas as variantes do botão de aceite e cabeçalhos de oferta.
         private val ACCEPT_REGEX = Regex(
-            "Aceitar|Recusar|Selecionar|Escolher|Nova viagem|Nova corrida",
+            "Aceitar|Recusar|Selecionar|Escolher|Nova viagem|Nova corrida|99Pop|99Comfort|99Moto|99Negocia|99Entrega|99Plus|99Taxi|99Táxi",
             RegexOption.IGNORE_CASE
         )
     }
