@@ -113,7 +113,7 @@ class MainActivity : ComponentActivity() {
         Toast.makeText(this, "Bolha flutuante exibida!", Toast.LENGTH_SHORT).show()
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleScreenIntent(intent)
     }
