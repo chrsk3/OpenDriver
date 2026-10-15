@@ -231,7 +231,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                         isCapturing.set(false)
                         Log.w(TAG, "takeScreenshot falhou: $errorCode")
                         appendLogLine("screenshot FAIL code=$errorCode pkg=$packageName")
-                        if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_PROCESS) {
+                        if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) {
                             scheduleTrailingCapture(packageName, 500L)
                         }
                     }
