@@ -112,6 +112,22 @@ class MainActivity : ComponentActivity() {
         FloatingOverlayService.showResult(this, resultado)
         Toast.makeText(this, "Bolha flutuante exibida!", Toast.LENGTH_SHORT).show()
     }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleScreenIntent(intent)
+    }
+
+    private fun handleScreenIntent(intent: Intent?) {
+        val target = intent?.getStringExtra(EXTRA_SCREEN) ?: return
+        try {
+            currentScreen.value = Screen.valueOf(target.uppercase())
+        } catch (ignored: Exception) {}
+    }
+
+    companion object {
+        const val EXTRA_SCREEN = "extra_screen"
+    }
 }
 
 // ─── TELA PRINCIPAL (HOME) ───────────────────────────────────────────────────
@@ -237,22 +253,6 @@ private fun AppHeader() {
                 Text("100% Open Source • Privacidade Total", fontSize = 11.sp, color = TEXT_MUTED)
             }
         }
-    }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        handleScreenIntent(intent)
-    }
-
-    private fun handleScreenIntent(intent: Intent?) {
-        val target = intent?.getStringExtra(EXTRA_SCREEN) ?: return
-        try {
-            currentScreen.value = Screen.valueOf(target.uppercase())
-        } catch (_: Exception) {}
-    }
-
-    companion object {
-        const val EXTRA_SCREEN = "extra_screen"
     }
 }
 
