@@ -22,7 +22,9 @@ data class RideOffer(
     val pickupDurationMinutes: Double = 0.0,
     val tripDurationMinutes: Double,
     val passengerRating: Double? = null,
-    val tollFare: Double = 0.0
+    val tollFare: Double = 0.0,
+    val pickupAddress: String? = null,
+    val destinationAddress: String? = null
 ) {
     /** Distância total a ser percorrida (Busca + Viagem) */
     val totalDistanceKm: Double

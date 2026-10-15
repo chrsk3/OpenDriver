@@ -24,9 +24,11 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import org.opendriver.core.model.BubbleSize
+import org.opendriver.core.model.CardPosition
 import org.opendriver.core.model.ViabilityResult
 import org.opendriver.core.model.ViabilityStatus
 import org.opendriver.data.PreferencesRepository
+import org.opendriver.notification.RideOfferNotificationHelper
 import java.io.File
 import java.io.FileOutputStream
 import java.util.Locale
@@ -233,10 +235,16 @@ class FloatingOverlayService : Service() {
         removeCard()
 
         val prefs = PreferencesRepository(this)
-        val hGravity = when (prefs.getCardPosition()) {
-            "Centro" -> Gravity.CENTER_HORIZONTAL
-            "Direita" -> Gravity.END
-            else -> Gravity.START
+        val cardPosition = prefs.getCardPositionEnum()
+
+        // Aplicação da posição ancorada (CENTER, LEFT, RIGHT) estilo GigU:
+        // - CENTER (Centro): Gravity.CENTER_HORIZONTAL com x = 0 (centralizado na tela)
+        // - LEFT (Esquerda): Gravity.START com margem x = 16dp
+        // - RIGHT (Direita): Gravity.END com margem x = 16dp
+        val (hGravity, defaultX) = when (cardPosition) {
+            CardPosition.CENTER -> Pair(Gravity.CENTER_HORIZONTAL, 0)
+            CardPosition.RIGHT -> Pair(Gravity.END, dp(16f))
+            CardPosition.LEFT -> Pair(Gravity.START, dp(16f))
         }
 
         val params = WindowManager.LayoutParams(
@@ -248,7 +256,7 @@ class FloatingOverlayService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or hGravity
-            x = dp(16f)
+            x = defaultX
             y = dp(120f)
         }
 
@@ -261,16 +269,20 @@ class FloatingOverlayService : Service() {
 
         try {
             wm.addView(view, params)
-            logLine("card addView ok")
+            logLine("card addView ok (pos=$cardPosition gravity=$hGravity x=$defaultX)")
         } catch (e: Exception) {
             cardView = null
             logLine("card addView FAIL: ${e.javaClass.simpleName}: ${e.message}")
             return
         }
 
-        val durationMs = PreferencesRepository(this).getCardDurationSeconds().coerceIn(2, 60) * 1000L
+        val durationSeconds = prefs.getCardDurationSeconds().coerceIn(2, 60)
+        val durationMs = durationSeconds * 1000L
         autoDismissRunnable?.let { handler.removeCallbacks(it) }
-        autoDismissRunnable = Runnable { removeCard() }
+        autoDismissRunnable = Runnable {
+            logLine("card auto-dismiss: tempo de exibição (${durationSeconds}s) expirou")
+            removeCard()
+        }
         handler.postDelayed(autoDismissRunnable!!, durationMs)
     }
 
@@ -434,6 +446,7 @@ class FloatingOverlayService : Service() {
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
+        var moved = false
 
         view.setOnTouchListener { _, event ->
             when (event.action) {
@@ -442,14 +455,33 @@ class FloatingOverlayService : Service() {
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
+                    moved = false
+                    // Pausa o auto-dismiss durante a interação com o card
+                    autoDismissRunnable?.let { handler.removeCallbacks(it) }
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX + (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
+                    val dx = event.rawX - initialTouchX
+                    val dy = event.rawY - initialTouchY
+                    if (abs(dx) > dp(6f) || abs(dy) > dp(6f)) moved = true
+                    params.x = initialX + dx.toInt()
+                    params.y = initialY + dy.toInt()
                     try {
                         wm.updateViewLayout(view, params)
                     } catch (_: Exception) {}
+                    true
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (!moved) {
+                        // Toque rápido sem arrastar: fecha o card manualmente e cancela o timer
+                        logLine("card fechado manualmente por clique")
+                        removeCard()
+                    } else {
+                        // Se o card foi arrastado e solto, reinicia o timer de auto-dismiss
+                        val durationMs = PreferencesRepository(this).getCardDurationSeconds().coerceIn(2, 60) * 1000L
+                        autoDismissRunnable = Runnable { removeCard() }
+                        handler.postDelayed(autoDismissRunnable!!, durationMs)
+                    }
                     true
                 }
                 else -> false
@@ -490,20 +522,10 @@ class FloatingOverlayService : Service() {
 
     private fun postTextNotification(res: ViabilityResult) {
         try {
-            val mgr = getSystemService(NotificationManager::class.java) ?: return
-            val text = "%s • Lucro R$ %.2f • R$ %.2f/km • R$ %.1f/h".format(
-                Locale.US, res.offer.platform.displayName, res.netProfit, res.netPerKm, res.netHourlyRate
-            )
-            val notification = NotificationCompat.Builder(this, "opendriver_overlay_channel")
-                .setContentTitle("OpenDriver • ${res.status.label}")
-                .setContentText(text)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(text))
-                .setSmallIcon(android.R.drawable.ic_menu_compass)
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setAutoCancel(true)
-                .build()
-            mgr.notify(2002, notification)
-        } catch (_: Exception) {}
+            RideOfferNotificationHelper.postRideOfferNotification(this, res)
+        } catch (e: Exception) {
+            logLine("Falha ao emitir notificação rica: ${e.message}")
+        }
     }
 
     private fun logLine(msg: String) {

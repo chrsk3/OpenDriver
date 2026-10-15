@@ -8,15 +8,11 @@
 ---
 
 ## Última task em andamento
-**Otimizar a latência do OCR.** O usuário relatou que a leitura da primeira corrida
-demorava (~14s, depois ~2–4s). Já implementado nesta reta final:
-- `perf(ocr): recorta a faixa da oferta e reduz resolução antes do OCR` (`df0ad67`)
-  — recorta os ~70% de baixo da tela (onde fica o card da oferta da Uber) e limita a
-  largura a 900px antes de mandar pro ML Kit (menos pixels = mais rápido).
-- Antes disso: warm-up do modelo ML Kit no `onCreate` e throttle de OCR em 1s.
-
-> **Pendente de validação:** o usuário vai testar **amanhã** o comportamento/velocidade
-> com a captura recortada.
+**Paridade com GigU (co.gigu.app).** Implementados até o momento:
+1. **Deduplicação perceptual de frames (SAD 64x64):** `FrameDeduplicator` descarta screenshots quase idênticos (< 8% SAD) antes do ML Kit.
+2. **Reconstrução geométrica de linhas:** `LineReconstructor` agrupa elementos com sobreposição vertical ≥ 50% do baseline e ordena horizontalmente da esquerda para a direita.
+3. **Notificação rica + botões Maps + anti-dismiss:** `RideOfferNotificationHelper` com layout `notification_ride_offer.xml` (RemoteViews), canal de alta prioridade, `autoCancel(false)` e intents do Google Maps para Embarque e Destino.
+4. **Card flutuante com posições ancoradas e auto-dismiss:** Ancoragem em 3 posições (`CENTER`, `LEFT`, `RIGHT`) via `CardPosition`, default no Centro com `x = 0`, duração configurável (padrão 10s) e timer com descarte manual ao clicar e pausa em arraste.
 
 ---
 

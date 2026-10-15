@@ -14,6 +14,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.opendriver.core.calculator.ViabilityEngine
 import org.opendriver.core.model.RideOffer
 import org.opendriver.data.PreferencesRepository
+import org.opendriver.parser.LineReconstructor
 import org.opendriver.parser.RideTextParser
 import java.io.File
 import java.io.FileOutputStream
@@ -41,6 +42,9 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     // Trabalho pesado (I/O de log e listeners do OCR) fora da main thread.
     private val ioExecutor = Executors.newSingleThreadExecutor()
+
+    // Deduplicação perceptual de frames (SAD 64x64) antes do OCR
+    private val frameDeduplicator = FrameDeduplicator()
 
     private var lastOfferKey: String = ""
     private var lastOfferTimestamp: Long = 0
@@ -164,16 +168,19 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         val cropped = cropOfferRegion(software)
         if (cropped !== software) software.recycle()
 
+        // Deduplicação perceptual (SAD 64x64): se o frame for quase idêntico ao anterior
+        // (SAD < limiar de 8%), descarta imediatamente e evita o custo de inferência do ML Kit.
+        if (frameDeduplicator.shouldSkip(cropped, packageName)) {
+            cropped.recycle()
+            return
+        }
+
         val image = InputImage.fromBitmap(cropped, 0)
         recognizer.process(image)
             .addOnSuccessListener(ioExecutor) { vision ->
-                val lines = mutableListOf<String>()
-                for (block in vision.textBlocks) {
-                    for (line in block.lines) {
-                        val t = normalize(line.text)
-                        if (t.isNotEmpty()) lines.add(t)
-                    }
-                }
+                // Reconstrução geométrica de linhas (igual ao GigU - qf0.smali):
+                // Agrupa palavras por sobreposição vertical >= 50% (mesmo baseline) e ordena da esquerda para a direita.
+                val lines = LineReconstructor.reconstruct(vision)
                 cropped.recycle()
 
                 appendCaptureLog("ocr", packageName, -1, lines)
@@ -347,6 +354,7 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        frameDeduplicator.reset()
         ioExecutor.shutdown()
         super.onDestroy()
     }

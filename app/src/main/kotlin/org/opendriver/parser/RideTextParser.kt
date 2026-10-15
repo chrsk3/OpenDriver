@@ -1,5 +1,6 @@
 package org.opendriver.parser
 
+import com.google.mlkit.vision.text.Text
 import org.opendriver.core.model.Platform
 import org.opendriver.core.model.RideOffer
 
@@ -18,6 +19,13 @@ object RideTextParser {
     private val RATING_REGEX = Regex(
         "([3-5][.,][0-9]{1,2})" + SP + "*\\([0-9]+\\)|[★*]" + SP + "*([3-5][.,][0-9]{1,2})"
     )
+
+    /**
+     * Analisa o objeto completo [Text] do ML Kit utilizando reconstrução geométrica
+     * de linhas (sobreposição vertical >= 50% e ordenação horizontal) antes de passar pelo parser regex.
+     */
+    fun parse(packageName: String, visionText: Text): RideOffer? =
+        parse(packageName, LineReconstructor.reconstruct(visionText))
 
     /**
      * Analisa uma lista de textos coletados da tela do app e tenta montar uma RideOffer válida.

@@ -3,6 +3,7 @@ package org.opendriver.data
 import android.content.Context
 import android.content.SharedPreferences
 import org.opendriver.core.model.BubbleSize
+import org.opendriver.core.model.CardPosition
 import org.opendriver.core.model.DriverPreferences
 import org.opendriver.core.model.FuelType
 import org.opendriver.core.model.VehicleProfile
@@ -60,8 +61,8 @@ class PreferencesRepository(context: Context) {
         .putInt("floating_button_opacity", opacity.coerceIn(10, 100))
         .apply()
 
-    /** Por quantos segundos o card de resultado fica na tela antes de sumir (padrão 8s). */
-    fun getCardDurationSeconds(): Int = prefs.getInt("card_duration_seconds", 8)
+    /** Por quantos segundos o card de resultado fica na tela antes de sumir (padrão 10s). */
+    fun getCardDurationSeconds(): Int = prefs.getInt("card_duration_seconds", 10)
     fun setCardDurationSeconds(seconds: Int) =
         prefs.edit().putInt("card_duration_seconds", seconds.coerceIn(2, 60)).apply()
 
@@ -220,9 +221,11 @@ class PreferencesRepository(context: Context) {
 
     // === Aparência do card de resultado ===
 
-    /** Posição horizontal do card: "Esquerda", "Centro" ou "Direita". */
-    fun getCardPosition(): String = prefs.getString("card_position", "Esquerda") ?: "Esquerda"
-    fun setCardPosition(v: String) = prefs.edit().putString("card_position", v).apply()
+    /** Posição horizontal do card: "Centro" (CENTER), "Esquerda" (LEFT) ou "Direita" (RIGHT). Padrão: "Centro". */
+    fun getCardPosition(): String = prefs.getString("card_position", "Centro") ?: "Centro"
+    fun getCardPositionEnum(): CardPosition = CardPosition.from(getCardPosition())
+    fun setCardPosition(v: String) = prefs.edit().putString("card_position", CardPosition.from(v).displayName).apply()
+    fun setCardPosition(v: CardPosition) = prefs.edit().putString("card_position", v.displayName).apply()
 
     /** Tema do card: "Escuro" ou "Claro". */
     fun getCardTheme(): String = prefs.getString("card_theme", "Claro") ?: "Claro"
