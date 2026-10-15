@@ -7,6 +7,8 @@ import org.opendriver.core.model.CardPosition
 import org.opendriver.core.model.DriverPreferences
 import org.opendriver.core.model.FuelType
 import org.opendriver.core.model.VehicleProfile
+import org.opendriver.data.local.AppDatabase
+import org.opendriver.data.local.RideEntity
 
 /**
  * Repositório para carregar e salvar todas as preferências do motorista localmente.
@@ -17,6 +19,8 @@ class PreferencesRepository(context: Context) {
         context.getSharedPreferences("opendriver_prefs", Context.MODE_PRIVATE)
 
     private val historyFile = java.io.File(context.filesDir, "ride_history.csv")
+    private val database = AppDatabase.getInstance(context)
+    private val rideDao = database.rideDao()
 
     init {
         // Migração única: força Copiloto e Cálculo de Ganhos a iniciarem desligados
@@ -27,6 +31,25 @@ class PreferencesRepository(context: Context) {
                 .putBoolean("earnings_calc_enabled", false)
                 .putBoolean("migr_defaults_off_v1", true)
                 .apply()
+        }
+
+        // Migração única do histórico legado em CSV para o banco Room
+        migrateCsvToRoomIfNeeded()
+    }
+
+    private fun migrateCsvToRoomIfNeeded() {
+        if (!prefs.getBoolean("migr_csv_to_room_v1", false)) {
+            try {
+                if (historyFile.exists()) {
+                    val lines = historyFile.readLines()
+                    val entries = lines.mapNotNull { RideHistoryEntry.parse(it) }
+                    if (entries.isNotEmpty()) {
+                        val entities = entries.map { it.toEntity() }
+                        rideDao.insertAllSync(entities)
+                    }
+                }
+                prefs.edit().putBoolean("migr_csv_to_room_v1", true).apply()
+            } catch (_: Exception) {}
         }
     }
 
@@ -251,29 +274,47 @@ class PreferencesRepository(context: Context) {
     fun getTextNotificationEnabled(): Boolean = prefs.getBoolean("text_notification", true)
     fun setTextNotificationEnabled(v: Boolean) = prefs.edit().putBoolean("text_notification", v).apply()
 
-    // === Histórico de corridas capturadas ===
+    // === Histórico de corridas capturadas (SQLite via Room) ===
 
-    /** Linha: timestamp;plataforma;valor;km;lucro;status */
-    fun addHistoryEntry(line: String) {
+    /** Salva uma nova corrida diretamente no banco Room. */
+    fun saveRide(entity: RideEntity) {
         try {
-            val existing = if (historyFile.exists()) historyFile.readLines() else emptyList()
-            val kept = (existing + line).takeLast(200)
-            historyFile.writeText(kept.joinToString("\n"))
+            rideDao.insertSync(entity)
         } catch (_: Exception) {}
     }
 
-    /** Mais recentes primeiro. */
+    /** Compatibilidade legada: grava a partir da linha serializada. */
+    fun addHistoryEntry(line: String) {
+        val entry = RideHistoryEntry.parse(line)
+        if (entry != null) {
+            saveRide(entry.toEntity())
+        }
+    }
+
+    /** Retorna as corridas do Room em ordem decrescente de data (mais recentes primeiro). */
     fun getHistory(): List<RideHistoryEntry> {
-        if (!historyFile.exists()) return emptyList()
         return try {
-            historyFile.readLines().mapNotNull { RideHistoryEntry.parse(it) }.reversed()
+            rideDao.getAllSync().map { it.toHistoryEntry() }
         } catch (_: Exception) {
             emptyList()
         }
     }
 
+    /** Retorna todas as entidades completas do Room. */
+    fun getRides(): List<RideEntity> {
+        return try {
+            rideDao.getAllSync()
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    /** Limpa todo o histórico de corridas no Room e apaga o arquivo CSV legado se existir. */
     fun clearHistory() {
-        try { historyFile.delete() } catch (_: Exception) {}
+        try {
+            rideDao.deleteAllSync()
+            if (historyFile.exists()) historyFile.delete()
+        } catch (_: Exception) {}
     }
 
     // === Ganho acumulado (simulado para tela de detalhes) ===

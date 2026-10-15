@@ -14,6 +14,7 @@ import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.opendriver.core.calculator.ViabilityEngine
 import org.opendriver.core.model.RideOffer
 import org.opendriver.data.PreferencesRepository
+import org.opendriver.data.local.RideEntity
 import org.opendriver.parser.LineReconstructor
 import org.opendriver.parser.RideTextParser
 import java.io.File
@@ -246,15 +247,23 @@ class OpenDriverAccessibilityService : AccessibilityService() {
                 "lucro R$ ${"%.2f".format(result.netProfit)} • ${result.status.label}"
         )
 
-        val entry = org.opendriver.data.RideHistoryEntry(
-            timeMs = System.currentTimeMillis(),
+        val entity = RideEntity(
+            timestamp = System.currentTimeMillis(),
             platform = result.offer.platform.displayName,
-            fare = result.offer.grossFare,
-            distanceKm = result.offer.totalDistanceKm,
-            profit = result.netProfit,
-            status = result.status.label
+            grossFare = result.offer.grossFare,
+            totalDistanceKm = result.offer.totalDistanceKm,
+            totalDurationMinutes = result.offer.totalDurationMinutes,
+            netProfit = result.netProfit,
+            grossPerKm = result.grossPerKm,
+            netPerKm = result.netPerKm,
+            grossHourlyRate = result.grossHourlyRate,
+            netHourlyRate = result.netHourlyRate,
+            status = result.status.label,
+            pickupAddress = result.offer.pickupAddress,
+            destinationAddress = result.offer.destinationAddress,
+            passengerRating = result.offer.passengerRating
         )
-        ioExecutor.execute { preferencesRepo.addHistoryEntry(entry.serialize()) }
+        ioExecutor.execute { preferencesRepo.saveRide(entity) }
 
         FloatingOverlayService.showResult(this, result)
         return true

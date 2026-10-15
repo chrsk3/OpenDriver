@@ -71,10 +71,20 @@ fun HistoryScreen(repo: PreferencesRepository, onBack: () -> Unit) {
                                     Text(e.status, fontSize = 11.sp, color = col, fontWeight = FontWeight.SemiBold)
                                 }
                                 Spacer(Modifier.height(2.dp))
-                                Text(
-                                    "R$ ${e.fare.fmt2()} · ${e.distanceKm.fmt2()} km · ${fmt.format(Date(e.timeMs))}",
-                                    fontSize = 11.sp, color = TEXT_MUTED
-                                )
+                                val metricsText = if (e.durationMinutes > 0) {
+                                    "R$ ${e.fare.fmt2()} · ${e.distanceKm.fmt2()} km · ${e.durationMinutes.toInt()} min · ${fmt.format(Date(e.timeMs))}"
+                                } else {
+                                    "R$ ${e.fare.fmt2()} · ${e.distanceKm.fmt2()} km · ${fmt.format(Date(e.timeMs))}"
+                                }
+                                Text(metricsText, fontSize = 11.sp, color = TEXT_MUTED)
+                                if (!e.pickupAddress.isNullOrBlank() || !e.destinationAddress.isNullOrBlank()) {
+                                    Spacer(Modifier.height(2.dp))
+                                    val route = listOfNotNull(
+                                        e.pickupAddress?.takeIf { it.isNotBlank() },
+                                        e.destinationAddress?.takeIf { it.isNotBlank() }
+                                    ).joinToString(" ➔ ")
+                                    Text(route, fontSize = 10.sp, color = Color(0xFF90CAF9), maxLines = 1)
+                                }
                             }
                             Text(
                                 e.profit.brl(),

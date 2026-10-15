@@ -13,6 +13,7 @@
 2. **Reconstrução geométrica de linhas:** `LineReconstructor` agrupa elementos com sobreposição vertical ≥ 50% do baseline e ordena horizontalmente da esquerda para a direita.
 3. **Notificação rica + botões Maps + anti-dismiss:** `RideOfferNotificationHelper` com layout `notification_ride_offer.xml` (RemoteViews), canal de alta prioridade, `autoCancel(false)` e intents do Google Maps para Embarque e Destino.
 4. **Card flutuante com posições ancoradas e auto-dismiss:** Ancoragem em 3 posições (`CENTER`, `LEFT`, `RIGHT`) via `CardPosition`, default no Centro com `x = 0`, duração configurável (padrão 10s) e timer com descarte manual ao clicar e pausa em arraste.
+5. **Histórico em SQLite via Room:** `RideEntity`, `RideDao` e `AppDatabase` (androidx.room) substituindo `ride_history.csv`, com migração única automática dos dados legados, schema detalhado de métricas e suporte na `HistoryScreen`.
 
 ---
 

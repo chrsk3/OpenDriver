@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose") version "2.0.0"
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -69,6 +70,12 @@ dependencies {
     // OCR das ofertas: a Uber não expõe o texto da corrida na árvore de acessibilidade,
     // então lemos a tela via screenshot (AccessibilityService.takeScreenshot) + ML Kit.
     implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // Banco de dados Room (SQLite) para histórico de corridas
+    val roomVersion = "2.6.1"
+    implementation("androidx.room:room-runtime:$roomVersion")
+    implementation("androidx.room:room-ktx:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     testImplementation("junit:junit:4.13.2")
 }
