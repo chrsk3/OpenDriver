@@ -1,8 +1,8 @@
 # STATE — OpenDriver
 
-**Data/hora:** 2026-10-14 04:44 (-03)
+**Data/hora:** 2026-10-15 01:36 (-03)
 **Branch:** `main` · **Repo:** https://github.com/chrsk3/OpenDriver
-**Último commit:** `df0ad67867c19a0d06799edfc879de0344d3d510`
+**Último commit:** `6950deef6d431e6fc77cd8c66181165510331202`
 **Working tree:** limpo
 
 ---
@@ -16,6 +16,7 @@
 5. **Histórico em SQLite via Room:** `RideEntity`, `RideDao` e `AppDatabase` (androidx.room) substituindo `ride_history.csv`, com migração única automática dos dados legados, schema detalhado de métricas e suporte na `HistoryScreen`.
 6. **Suporte à 99 (app do motorista):** Detecção de pacotes oficiais (`com.app99.driver`, `com.app99.radar.driver`, `com.app99.food.driver`, `com.didiglobal.driver`, `com.taxis99`), parsing de categorias (99Pop, 99Comfort, 99Moto, 99Negocia, etc.), notas no formato 99 (`4.8 ★`), duração com horas (`1 h 15 min`) e extração de endereços de embarque/destino integrada aos botões do Google Maps e persistência no Room.
 7. **Menu expandido na bolha copiloto:** Ao tocar no botão flutuante, abre um menu compacto com atalhos rápidos (Abrir app, Histórico de corridas, Ativar/Pausar leitor OCR com feedback via Toast, Ativar/Desativar notificações ricas e Fechar copiloto), fechamento ao tocar fora (`FLAG_WATCH_OUTSIDE_TOUCH`) ou arrastar, e navegação direta para telas via `MainActivity.EXTRA_SCREEN`.
+8. **Fix de compilação do APK Android no CI:** Ajuste de escopo de métodos e `companion object` na `MainActivity`, correção de assinatura de `onNewIntent(intent: Intent)` e smart cast seguro de `passengerRating` em módulo cruzado.
 
 ---
 
@@ -32,6 +33,14 @@
    pra descartar home/oportunidades.
 
 ### Commits relevantes (mais recente primeiro)
+- `6950dee` fix(ui): ajustar assinatura de onNewIntent para Intent nao-nulo
+- `31d509d` fix(ui): mover onNewIntent e companion object para dentro da MainActivity
+- `1a380ee` fix(build): corrigir escopo de metodos na MainActivity e smart cast de rating
+- `0e757ac` feat: menu expandido na bolha copiloto
+- `5a90376` feat: suporte a ofertas da 99
+- `cf28600` feat: histórico de corridas migrado para Room
+- `1e80343` feat: Fase A - paridade essencial com GigU (SAD, LineReconstructor, notificação rica, card posição/duração)
+- `84d01a0` docs: add STATE.md (pausa do projeto - status, proximos passos e duvidas)
 - `df0ad67` perf(ocr): recorte da faixa da oferta + downscale
 - `e8e14fb` fix(prefs): Copiloto/Cálculo iniciam desligados (migração única)
 - `4a26fa8` feat(ui): toggles iniciam off, dialog de permissões ao iniciar, ajustes em Detalhes
