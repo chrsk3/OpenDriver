@@ -38,10 +38,12 @@ enum class Screen { HOME, COPILOT, EARNINGS, EDIT, DETAILS, HISTORY }
 class MainActivity : ComponentActivity() {
 
     private lateinit var repo: PreferencesRepository
+    private val currentScreen = mutableStateOf(Screen.HOME)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         repo = PreferencesRepository(this)
+        handleScreenIntent(intent)
 
         setContent {
             MaterialTheme(
@@ -53,7 +55,7 @@ class MainActivity : ComponentActivity() {
                 )
             ) {
                 Surface(modifier = Modifier.fillMaxSize(), color = BG) {
-                    var screen by remember { mutableStateOf(Screen.HOME) }
+                    var screen by remember { currentScreen }
                     BackHandler(enabled = screen != Screen.HOME) { screen = Screen.HOME }
 
                     when (screen) {
@@ -282,5 +284,21 @@ fun FeatureCard(
                 )
             )
         }
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleScreenIntent(intent)
+    }
+
+    private fun handleScreenIntent(intent: Intent?) {
+        val target = intent?.getStringExtra(EXTRA_SCREEN) ?: return
+        try {
+            currentScreen.value = Screen.valueOf(target.uppercase())
+        } catch (_: Exception) {}
+    }
+
+    companion object {
+        const val EXTRA_SCREEN = "extra_screen"
     }
 }

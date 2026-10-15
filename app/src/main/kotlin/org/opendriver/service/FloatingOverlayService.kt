@@ -22,6 +22,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import org.opendriver.core.model.BubbleSize
 import org.opendriver.core.model.CardPosition
@@ -50,6 +51,8 @@ class FloatingOverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var cardView: View? = null
     private var triggerView: View? = null
+    private var triggerParams: WindowManager.LayoutParams? = null
+    private var menuView: View? = null
     private val handler = Handler(Looper.getMainLooper())
     private var autoDismissRunnable: Runnable? = null
 
@@ -134,6 +137,7 @@ class FloatingOverlayService : Service() {
             x = dp(16f)
             y = dp(120f)
         }
+        triggerParams = params
 
         val trigger = TextView(this).apply {
             text = "🚗" // 🚗
@@ -187,7 +191,10 @@ class FloatingOverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val dx = event.rawX - touchX
                     val dy = event.rawY - touchY
-                    if (abs(dx) > dp(6f) || abs(dy) > dp(6f)) moved = true
+                    if (abs(dx) > dp(6f) || abs(dy) > dp(6f)) {
+                        moved = true
+                        removeMenu() // Fecha o menu se o usuário arrastar a bolha
+                    }
                     // gravity = TOP|END: o eixo X é medido a partir da borda direita,
                     // então o deslocamento horizontal tem sinal invertido em relação ao dedo.
                     params.x = initialX - dx.toInt()
@@ -204,8 +211,8 @@ class FloatingOverlayService : Service() {
                             removeEverything()
                             stopSelf()
                         } else {
-                            // Clique no botão flutuante abre o app do OpenDriver.
-                            openApp()
+                            // Toque simples na bolha abre/fecha o menu de atalhos rápidos
+                            toggleMenu()
                         }
                     }
                     true
@@ -215,13 +222,245 @@ class FloatingOverlayService : Service() {
         }
     }
 
-    private fun openApp() {
+    private fun toggleMenu() {
+        if (menuView != null) {
+            removeMenu()
+        } else {
+            showMenu()
+        }
+    }
+
+    private fun removeMenu() {
+        menuView?.let { view ->
+            try {
+                windowManager?.removeView(view)
+            } catch (_: Exception) {}
+            menuView = null
+            logLine("menu removed")
+        }
+    }
+
+    @SuppressLint("ClickableViewAccessibility")
+    private fun showMenu() {
+        val wm = windowManager ?: return
+        removeMenu()
+
+        val tParams = triggerParams ?: return
+        val prefs = PreferencesRepository(this)
+
+        val menuWidth = dp(230f)
+        val screenWidth = resources.displayMetrics.widthPixels
+        val screenHeight = resources.displayMetrics.heightPixels
+
+        val fscale = prefs.getFloatingButtonSize().scale
+        val tSize = dp(60f * fscale)
+
+        // Se a bolha estiver perto do canto direito, menu abre à esquerda da bolha.
+        // Se a bolha foi arrastada para o canto esquerdo da tela, menu abre à direita.
+        val menuX = if (tParams.x + tSize + menuWidth <= screenWidth - dp(12f)) {
+            tParams.x + tSize + dp(8f)
+        } else {
+            dp(16f)
+        }
+        val menuY = (tParams.y - dp(10f)).coerceIn(dp(40f), (screenHeight - dp(340f)).coerceAtLeast(dp(40f)))
+
+        val params = WindowManager.LayoutParams(
+            menuWidth,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            overlayType(),
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                    WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            x = menuX
+            y = menuY
+        }
+
+        val menuLayout = createMenuView(prefs)
+        menuLayout.setOnTouchListener { _, event ->
+            if (event.action == MotionEvent.ACTION_OUTSIDE) {
+                removeMenu()
+                true
+            } else {
+                false
+            }
+        }
+
+        menuView = menuLayout
+        try {
+            wm.addView(menuLayout, params)
+            logLine("menu addView ok (x=$menuX, y=$menuY)")
+        } catch (e: Exception) {
+            menuView = null
+            logLine("menu addView FAIL: ${e.javaClass.simpleName}: ${e.message}")
+        }
+    }
+
+    private fun createMenuView(prefs: PreferencesRepository): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val pad = dp(14f)
+            setPadding(pad, pad, pad, pad)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(16f).toFloat()
+                setColor(Color.parseColor("#1E1E1E"))
+                setStroke(dp(1.5f), Color.parseColor("#00E676"))
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                elevation = dp(8f).toFloat()
+            }
+        }
+
+        // Header: "⚡ OpenDriver" + "✕"
+        val header = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val title = TextView(this).apply {
+            text = "⚡ OpenDriver"
+            textSize = 15f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val closeBtn = TextView(this).apply {
+            text = "✕"
+            textSize = 16f
+            setTextColor(Color.parseColor("#AAAAAA"))
+            setPadding(dp(6f), dp(2f), dp(6f), dp(2f))
+            setOnClickListener { removeMenu() }
+        }
+        header.addView(title)
+        header.addView(closeBtn)
+        root.addView(header)
+
+        // Divider
+        root.addView(createMenuDivider())
+
+        // 1. Abrir Aplicativo
+        root.addView(createMenuItem("🏠 Abrir App", "Ir para a tela inicial") {
+            openApp("HOME")
+            removeMenu()
+        })
+
+        // 2. Histórico de Corridas
+        root.addView(createMenuItem("📋 Histórico", "Ver corridas capturadas") {
+            openApp("HISTORY")
+            removeMenu()
+        })
+
+        // 3. Leitor / Copiloto (Toggle Ativar/Pausar)
+        val copilotEnabled = prefs.getCopilotEnabled()
+        val copilotTitle = if (copilotEnabled) "🟢 Leitor: Ativo" else "⏸️ Leitor: Pausado"
+        val copilotSub = if (copilotEnabled) "Toque para pausar captura" else "Toque para retomar captura"
+        root.addView(createMenuItem(copilotTitle, copilotSub) {
+            val newState = !prefs.getCopilotEnabled()
+            prefs.setCopilotEnabled(newState)
+            Toast.makeText(
+                this,
+                if (newState) "Leitor de ofertas ATIVADO" else "Leitor de ofertas PAUSADO",
+                Toast.LENGTH_SHORT
+            ).show()
+            removeMenu()
+        })
+
+        // 4. Notificações Ricas (Toggle ON/OFF)
+        val notifEnabled = prefs.getTextNotificationEnabled()
+        val notifTitle = if (notifEnabled) "🔔 Notificação: Ativa" else "🔕 Notificação: Off"
+        val notifSub = if (notifEnabled) "Notificação com botões Maps" else "Notificações pausadas"
+        root.addView(createMenuItem(notifTitle, notifSub) {
+            val newState = !prefs.getTextNotificationEnabled()
+            prefs.setTextNotificationEnabled(newState)
+            Toast.makeText(
+                this,
+                if (newState) "Notificação rica ATIVADA" else "Notificação rica DESATIVADA",
+                Toast.LENGTH_SHORT
+            ).show()
+            removeMenu()
+        })
+
+        // Divider
+        root.addView(createMenuDivider())
+
+        // 5. Ocultar Copiloto (Encerra o botão flutuante)
+        root.addView(createMenuItem("🚫 Fechar Copiloto", "Ocultar este botão flutuante", isDestructive = true) {
+            removeEverything()
+            stopSelf()
+        })
+
+        return root
+    }
+
+    private fun createMenuItem(
+        titleText: String,
+        subText: String? = null,
+        isDestructive: Boolean = false,
+        onClick: () -> Unit
+    ): View {
+        val item = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val padH = dp(10f)
+            val padV = dp(7f)
+            setPadding(padH, padV, padH, padV)
+            isClickable = true
+            isFocusable = true
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, dp(2f), 0, dp(2f))
+            }
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = dp(8f).toFloat()
+                setColor(Color.parseColor("#252525"))
+            }
+            setOnClickListener { onClick() }
+        }
+
+        val title = TextView(this).apply {
+            text = titleText
+            textSize = 13.5f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(if (isDestructive) Color.parseColor("#FF5252") else Color.WHITE)
+        }
+        item.addView(title)
+
+        if (!subText.isNullOrEmpty()) {
+            val sub = TextView(this).apply {
+                text = subText
+                textSize = 10.5f
+                setTextColor(Color.parseColor("#9E9E9E"))
+                setPadding(0, dp(1f), 0, 0)
+            }
+            item.addView(sub)
+        }
+
+        return item
+    }
+
+    private fun createMenuDivider(): View = View(this).apply {
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(1f)
+        ).apply {
+            setMargins(0, dp(6f), 0, dp(6f))
+        }
+        setBackgroundColor(Color.parseColor("#333333"))
+    }
+
+    private fun openApp(screenName: String? = null) {
         try {
             val intent = Intent(this, org.opendriver.ui.MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                if (screenName != null) {
+                    putExtra(org.opendriver.ui.MainActivity.EXTRA_SCREEN, screenName)
+                }
             }
             startActivity(intent)
-            logLine("trigger tap -> open MainActivity")
+            logLine("open MainActivity (screen=$screenName)")
         } catch (e: Exception) {
             logLine("openApp FAIL: ${e.message}")
         }
@@ -232,6 +471,7 @@ class FloatingOverlayService : Service() {
     @SuppressLint("ClickableViewAccessibility")
     private fun showCard(res: ViabilityResult) {
         val wm = windowManager ?: return
+        removeMenu()
         removeCard()
 
         val prefs = PreferencesRepository(this)
@@ -545,6 +785,7 @@ class FloatingOverlayService : Service() {
     }
 
     private fun removeEverything() {
+        removeMenu()
         removeCard()
         triggerView?.let { view ->
             try {
