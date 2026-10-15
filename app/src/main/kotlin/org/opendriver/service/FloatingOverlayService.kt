@@ -65,9 +65,17 @@ class FloatingOverlayService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         startAsForeground()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         logLine("service onCreate")
+    }
+
+    /** Exibe o resultado diretamente na UI thread sem passar por Intent IPC (0ms de latência). */
+    fun renderResult(res: ViabilityResult) {
+        currentResult = res
+        showTrigger()
+        showCard(res)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -802,6 +810,9 @@ class FloatingOverlayService : Service() {
             WindowManager.LayoutParams.TYPE_PHONE
 
     override fun onDestroy() {
+        if (instance === this) {
+            instance = null
+        }
         removeEverything()
         super.onDestroy()
     }
@@ -810,6 +821,10 @@ class FloatingOverlayService : Service() {
         const val ACTION_SHOW = "org.opendriver.SHOW_OVERLAY"
         const val ACTION_HIDE = "org.opendriver.HIDE_OVERLAY"
 
+        @Volatile
+        var instance: FloatingOverlayService? = null
+            private set
+
         private var currentResult: ViabilityResult? = null
 
         fun showResult(context: Context, result: ViabilityResult) {
@@ -817,12 +832,24 @@ class FloatingOverlayService : Service() {
             logToFile(context, "showResult: R$ %.2f • %.1f km • %s".format(
                 Locale.US, result.offer.grossFare, result.offer.totalDistanceKm, result.status.label
             ))
-            startService(context)
+            val inst = instance
+            if (inst != null) {
+                logToFile(context, "showResult: direct render (0ms IPC)")
+                inst.handler.post { inst.renderResult(result) }
+            } else {
+                logToFile(context, "showResult: fallback startService")
+                startService(context)
+            }
         }
 
         /** Mostra apenas o botão flutuante (sem card), usado quando o Copiloto é ligado. */
         fun enable(context: Context) {
-            startService(context)
+            val inst = instance
+            if (inst != null) {
+                inst.handler.post { inst.showTrigger() }
+            } else {
+                startService(context)
+            }
         }
 
         private fun startService(context: Context) {
@@ -865,10 +892,18 @@ class FloatingOverlayService : Service() {
         }
 
         fun hide(context: Context) {
-            val intent = Intent(context, FloatingOverlayService::class.java).apply {
-                action = ACTION_HIDE
+            val inst = instance
+            if (inst != null) {
+                inst.handler.post {
+                    inst.removeEverything()
+                    inst.stopSelf()
+                }
+            } else {
+                val intent = Intent(context, FloatingOverlayService::class.java).apply {
+                    action = ACTION_HIDE
+                }
+                context.startService(intent)
             }
-            context.startService(intent)
         }
     }
 }

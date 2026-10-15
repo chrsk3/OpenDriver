@@ -2,12 +2,15 @@ package org.opendriver.service
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.os.Build
+import android.os.SystemClock
 import android.util.Log
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import androidx.core.content.ContextCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
@@ -23,6 +26,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Serviço de acessibilidade que captura ofertas de corrida da Uber/99.
@@ -41,18 +48,26 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     private lateinit var preferencesRepo: PreferencesRepository
 
-    // Trabalho pesado (I/O de log e listeners do OCR) fora da main thread.
+    // Trabalho pesado (I/O de log e persistência no Room) fora da main thread.
     private val ioExecutor = Executors.newSingleThreadExecutor()
+
+    // Executor dedicado em background para o loop de captura e processamento gráfico (como o GigU)
+    private val captureExecutor: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor()
 
     // Deduplicação perceptual de frames (SAD 64x64) antes do OCR
     private val frameDeduplicator = FrameDeduplicator()
+
+    private val isCapturing = AtomicBoolean(false)
+    private var lastCaptureTime: Long = 0
+    private var trailingCaptureFuture: ScheduledFuture<*>? = null
+    private var periodicCheckFuture: ScheduledFuture<*>? = null
+    private var currentForegroundPackage: String? = null
 
     private var lastOfferKey: String = ""
     private var lastOfferTimestamp: Long = 0
     private var eventsSeen: Int = 0
     private var lastCounterPersist: Long = 0
     private var lastLogAt: Long = 0
-    private var lastOcrAt: Long = 0
 
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
@@ -63,15 +78,30 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         warmUpOcr()
     }
 
-    /** Carrega o modelo de OCR já no start, para a 1ª oferta não esperar ~10s. */
+    /** Carrega o modelo de OCR com bitmap e texto real já no start, eliminando o cold start. */
     private fun warmUpOcr() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-        ioExecutor.execute {
+        captureExecutor.execute {
             try {
-                val bmp = Bitmap.createBitmap(16, 16, Bitmap.Config.ARGB_8888)
+                val bmp = Bitmap.createBitmap(240, 80, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bmp)
+                canvas.drawColor(Color.WHITE)
+                val paint = Paint().apply {
+                    color = Color.BLACK
+                    textSize = 18f
+                    isAntiAlias = true
+                }
+                canvas.drawText("R$ 25,90", 10f, 30f, paint)
+                canvas.drawText("12 min • 5.4 km Aceitar", 10f, 60f, paint)
+
                 recognizer.process(InputImage.fromBitmap(bmp, 0))
-                    .addOnCompleteListener { bmp.recycle() }
-            } catch (_: Exception) {}
+                    .addOnCompleteListener(captureExecutor) {
+                        bmp.recycle()
+                        Log.i(TAG, "ML Kit OCR pré-aquecido com sucesso!")
+                    }
+            } catch (e: Exception) {
+                Log.w(TAG, "Falha no warmUpOcr: ${e.message}")
+            }
         }
     }
 
@@ -79,11 +109,18 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         if (event == null) return
 
         val packageName = event.packageName?.toString() ?: return
-        if (!isTargetApp(packageName)) return
+        if (!isTargetApp(packageName)) {
+            stopPeriodicPolling()
+            currentForegroundPackage = null
+            return
+        }
 
+        currentForegroundPackage = packageName
         countEvent()
 
         if (!preferencesRepo.getCopilotEnabled()) return
+
+        startPeriodicPollingIfNeeded()
 
         // 1) Tentativa barata: ler o texto da árvore de acessibilidade.
         val texts = LinkedHashSet<String>()
@@ -115,92 +152,151 @@ class OpenDriverAccessibilityService : AccessibilityService() {
             }
         }
 
-        // 2) A oferta da Uber não aparece na árvore: tenta OCR da tela.
-        maybeRunOcr(packageName)
+        // 2) A oferta da Uber não aparece na árvore: captura reativa via screenshot + OCR.
+        requestScreenshot(packageName)
     }
 
-    // ── OCR (screenshot + ML Kit) ────────────────────────────────────────────
+    // ── Loop de Captura Reativo e Periódico (estilo GigU) ──────────────────────
 
-    private fun maybeRunOcr(packageName: String) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return // takeScreenshot é API 30+
+    private fun startPeriodicPollingIfNeeded() {
+        if (periodicCheckFuture == null || periodicCheckFuture?.isDone == true) {
+            periodicCheckFuture = captureExecutor.scheduleWithFixedDelay({
+                val pkg = currentForegroundPackage
+                if (pkg != null && isTargetApp(pkg) && preferencesRepo.getCopilotEnabled()) {
+                    requestScreenshot(pkg)
+                }
+            }, 1000L, 1000L, TimeUnit.MILLISECONDS)
+        }
+    }
 
-        val now = System.currentTimeMillis()
-        if (now - lastOcrAt < 1000) return
-        lastOcrAt = now
+    private fun stopPeriodicPolling() {
+        periodicCheckFuture?.cancel(false)
+        periodicCheckFuture = null
+    }
+
+    private fun scheduleTrailingCapture(packageName: String, delayMs: Long) {
+        val safeDelay = delayMs.coerceAtLeast(50L)
+        trailingCaptureFuture?.cancel(false)
+        trailingCaptureFuture = captureExecutor.schedule({
+            requestScreenshot(packageName)
+        }, safeDelay, TimeUnit.MILLISECONDS)
+    }
+
+    private fun requestScreenshot(packageName: String) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+
+        val now = SystemClock.uptimeMillis()
+        val elapsed = now - lastCaptureTime
+
+        // Se uma captura já está em andamento, agenda trailing capture para logo após
+        if (isCapturing.get()) {
+            scheduleTrailingCapture(packageName, MIN_CAPTURE_INTERVAL_MS)
+            return
+        }
+
+        // Se ainda não passou o intervalo mínimo entre capturas, agenda para quando liberar
+        if (elapsed < MIN_CAPTURE_INTERVAL_MS) {
+            scheduleTrailingCapture(packageName, MIN_CAPTURE_INTERVAL_MS - elapsed)
+            return
+        }
+
+        trailingCaptureFuture?.cancel(false)
+        trailingCaptureFuture = null
+        isCapturing.set(true)
+        lastCaptureTime = now
 
         try {
             takeScreenshot(
                 Display.DEFAULT_DISPLAY,
-                ContextCompat.getMainExecutor(this),
+                captureExecutor,
                 object : AccessibilityService.TakeScreenshotCallback {
                     override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
-                        val buffer = result.hardwareBuffer
-                        val bitmap = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
-                        buffer.close()
-                        if (bitmap == null) {
-                            Log.w(TAG, "OCR: bitmap nulo")
-                            return
+                        try {
+                            val buffer = result.hardwareBuffer
+                            val bitmap = Bitmap.wrapHardwareBuffer(buffer, result.colorSpace)
+                            buffer.close()
+                            if (bitmap == null) {
+                                Log.w(TAG, "OCR: bitmap nulo")
+                                isCapturing.set(false)
+                                return
+                            }
+                            runOcr(packageName, bitmap)
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Erro processando screenshot: ${e.message}")
+                            isCapturing.set(false)
                         }
-                        runOcr(packageName, bitmap)
                     }
 
                     override fun onFailure(errorCode: Int) {
+                        isCapturing.set(false)
                         Log.w(TAG, "takeScreenshot falhou: $errorCode")
                         appendLogLine("screenshot FAIL code=$errorCode pkg=$packageName")
+                        if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_PROCESS) {
+                            scheduleTrailingCapture(packageName, 500L)
+                        }
                     }
                 }
             )
         } catch (e: Exception) {
+            isCapturing.set(false)
             Log.w(TAG, "takeScreenshot exceção: ${e.message}")
         }
     }
 
     private fun runOcr(packageName: String, raw: Bitmap) {
-        // O screenshot vem como hardware bitmap: converte para software para poder recortar.
-        val software = if (raw.config == Bitmap.Config.HARDWARE) {
-            val copy = raw.copy(Bitmap.Config.ARGB_8888, false)
-            raw.recycle()
-            copy
-        } else raw
-        if (software == null) return
+        try {
+            // O screenshot vem como hardware bitmap: converte para software fora da main thread
+            val software = if (raw.config == Bitmap.Config.HARDWARE) {
+                val copy = raw.copy(Bitmap.Config.ARGB_8888, false)
+                raw.recycle()
+                copy
+            } else raw
+            if (software == null) {
+                isCapturing.set(false)
+                return
+            }
 
-        // Recorta a região onde a oferta aparece (parte de baixo) e reduz a resolução:
-        // menos pixels = OCR bem mais rápido (a oferta da Uber fica embaixo).
-        val cropped = cropOfferRegion(software)
-        if (cropped !== software) software.recycle()
+            val cropped = cropOfferRegion(software)
+            if (cropped !== software) software.recycle()
 
-        // Deduplicação perceptual (SAD 64x64): se o frame for quase idêntico ao anterior
-        // (SAD < limiar de 8%), descarta imediatamente e evita o custo de inferência do ML Kit.
-        if (frameDeduplicator.shouldSkip(cropped, packageName)) {
-            cropped.recycle()
-            return
-        }
-
-        val image = InputImage.fromBitmap(cropped, 0)
-        recognizer.process(image)
-            .addOnSuccessListener(ioExecutor) { vision ->
-                // Reconstrução geométrica de linhas (igual ao GigU - qf0.smali):
-                // Agrupa palavras por sobreposição vertical >= 50% (mesmo baseline) e ordena da esquerda para a direita.
-                val lines = LineReconstructor.reconstruct(vision)
+            // Deduplicação perceptual (SAD 64x64): descarta se a tela for quase idêntica ao frame anterior
+            if (frameDeduplicator.shouldSkip(cropped, packageName)) {
                 cropped.recycle()
+                isCapturing.set(false)
+                return
+            }
 
-                appendCaptureLog("ocr", packageName, -1, lines)
+            val image = InputImage.fromBitmap(cropped, 0)
+            recognizer.process(image)
+                .addOnSuccessListener(captureExecutor) { vision ->
+                    isCapturing.set(false)
+                    val lines = LineReconstructor.reconstruct(vision)
+                    cropped.recycle()
 
-                // A tela de oferta real sempre tem botão de aceite; home/oportunidades não.
-                if (hasAcceptSignal(lines)) {
-                    val offer = RideTextParser.parse(packageName, lines)
-                    if (offer != null) publishOffer(offer, packageName)
+                    appendCaptureLog("ocr", packageName, -1, lines)
+
+                    if (hasAcceptSignal(lines)) {
+                        val offer = RideTextParser.parse(packageName, lines)
+                        if (offer != null) publishOffer(offer, packageName)
+                    } else if (currentForegroundPackage == packageName) {
+                        // Card ainda em animação de subida: agenda nova leitura imediata pós-animação
+                        scheduleTrailingCapture(packageName, 500L)
+                    }
                 }
-            }
-            .addOnFailureListener(ioExecutor) { e ->
-                cropped.recycle()
-                Log.w(TAG, "OCR falhou: ${e.message}")
-            }
+                .addOnFailureListener(captureExecutor) { e ->
+                    isCapturing.set(false)
+                    cropped.recycle()
+                    Log.w(TAG, "OCR falhou: ${e.message}")
+                }
+        } catch (e: Exception) {
+            isCapturing.set(false)
+            Log.w(TAG, "Exceção no runOcr: ${e.message}")
+        }
     }
 
     /**
-     * Recorta a faixa inferior da tela (onde fica o card da oferta) e reduz a largura,
-     * acelerando o OCR. Cai para a imagem inteira se o recorte falhar.
+     * Recorta a faixa da oferta (descartando topo e barra de navegação inferior) e reduz para 720px,
+     * acelerando a inferência do ML Kit de ~850ms para ~300ms.
      */
     private fun cropOfferRegion(src: Bitmap): Bitmap {
         val w = src.width
@@ -208,8 +304,11 @@ class OpenDriverAccessibilityService : AccessibilityService() {
         if (w <= 0 || h <= 0) return src
 
         val top = (h * OFFER_TOP_FRACTION).toInt().coerceIn(0, h - 1)
+        val bottom = (h * OFFER_BOTTOM_FRACTION).toInt().coerceIn(top + 1, h)
+        val cropH = bottom - top
+
         val region = try {
-            Bitmap.createBitmap(src, 0, top, w, h - top)
+            Bitmap.createBitmap(src, 0, top, w, cropH)
         } catch (_: Exception) {
             src
         }
@@ -364,7 +463,10 @@ class OpenDriverAccessibilityService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        stopPeriodicPolling()
+        trailingCaptureFuture?.cancel(false)
         frameDeduplicator.reset()
+        captureExecutor.shutdown()
         ioExecutor.shutdown()
         super.onDestroy()
     }
@@ -373,9 +475,11 @@ class OpenDriverAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "OpenDriver"
-        // OCR mais rápido: usa só a faixa inferior da tela e reduz a largura.
-        private const val OFFER_TOP_FRACTION = 0.30f // descarta os 30% de cima
-        private const val OCR_MAX_WIDTH = 900
+        // OCR ultra-rápido: recorta a região da oferta (28% a 95% da tela) e reduz largura para 720px
+        private const val OFFER_TOP_FRACTION = 0.28f
+        private const val OFFER_BOTTOM_FRACTION = 0.95f
+        private const val OCR_MAX_WIDTH = 720
+        private const val MIN_CAPTURE_INTERVAL_MS = 450L
         private const val SP = "[\\s\\u00A0\\u202F]"
         private val FARE_REGEX = Regex("R\\$" + SP + "*([0-9]+[.,][0-9]{2})", RegexOption.IGNORE_CASE)
         private val DISTANCE_REGEX = Regex("[0-9]+(?:[.,][0-9]+)?" + SP + "*km", RegexOption.IGNORE_CASE)
