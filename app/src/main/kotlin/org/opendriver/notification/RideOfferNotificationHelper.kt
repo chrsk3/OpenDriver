@@ -123,10 +123,11 @@ object RideOfferNotificationHelper {
         remoteViews.setInt(R.id.notif_status_badge, "setBackgroundColor", statusColor)
 
         // Nota do passageiro (se disponível)
-        if (offer.passengerRating != null && offer.passengerRating > 0.0) {
+        val rating = offer.passengerRating
+        if (rating != null && rating > 0.0) {
             remoteViews.setTextViewText(
                 R.id.notif_rating,
-                "★ %.2f".format(Locale.US, offer.passengerRating)
+                "★ %.2f".format(Locale.US, rating)
             )
             remoteViews.setViewVisibility(R.id.notif_rating, View.VISIBLE)
         } else {

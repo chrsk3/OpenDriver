@@ -238,6 +238,22 @@ private fun AppHeader() {
             }
         }
     }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        handleScreenIntent(intent)
+    }
+
+    private fun handleScreenIntent(intent: Intent?) {
+        val target = intent?.getStringExtra(EXTRA_SCREEN) ?: return
+        try {
+            currentScreen.value = Screen.valueOf(target.uppercase())
+        } catch (_: Exception) {}
+    }
+
+    companion object {
+        const val EXTRA_SCREEN = "extra_screen"
+    }
 }
 
 @Composable
@@ -284,21 +300,5 @@ fun FeatureCard(
                 )
             )
         }
-    }
-
-    override fun onNewIntent(intent: Intent?) {
-        super.onNewIntent(intent)
-        handleScreenIntent(intent)
-    }
-
-    private fun handleScreenIntent(intent: Intent?) {
-        val target = intent?.getStringExtra(EXTRA_SCREEN) ?: return
-        try {
-            currentScreen.value = Screen.valueOf(target.uppercase())
-        } catch (_: Exception) {}
-    }
-
-    companion object {
-        const val EXTRA_SCREEN = "extra_screen"
     }
 }
